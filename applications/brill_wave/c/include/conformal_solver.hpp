@@ -112,7 +112,7 @@ struct conformal_solver_t {
 			for (size_t j = 0; j < Ngrid; ++j) {
 				if (exclude_self && eps2 == 0.0 && j == i) continue;
 
-				const auto &xyzj = r_xyz[i];
+				const auto &xyzj = r_xyz[j];
 				auto const r2 =
 					eps2 + std::transform_reduce(xyzi.begin(), xyzi.end(), xyzj.begin(), real(0), std::plus<real>{}, [](real x, real y) {
 						return sqr(x - y);
