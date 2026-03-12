@@ -13,8 +13,8 @@ all: $(BIN)
 
 $(BIN): $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
-
-src/%.o: src/%.c include/conformal_solver.h
+p
+src/%.o: src/%.c include/conformal_solver.hpp
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
 clean:
