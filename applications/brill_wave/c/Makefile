@@ -1,8 +1,8 @@
-CC ?= cc
-CFLAGS ?= -O2 -std=c99 -Wall -Wextra -Wpedantic
+CC ?= g++
+CFLAGS ?= -O2 -std=c++20 -Wall -Wextra -Wpedantic
 CPPFLAGS ?= -Iinclude
 LDFLAGS ?=
-LDLIBS ?= -lm
+LDLIBS ?= -lm -lstdc++
 
 BIN := conformal_demo
 OBJ := src/main.o src/conformal_solver.o
@@ -13,7 +13,7 @@ all: $(BIN)
 
 $(BIN): $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
-p
+
 src/%.o: src/%.c include/conformal_solver.hpp
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
