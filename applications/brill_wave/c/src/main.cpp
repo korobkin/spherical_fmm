@@ -50,7 +50,7 @@ static int parse_double(const char *s, double *out) {
 
 int main(int argc, char **argv) {
 	feenableexcept(FE_DIVBYZERO);
-	int n = 14;
+	int n = 15;
 	double L = 2.0;
 	double sigma = 0.5;
 	double eps = 1e-6;
@@ -136,6 +136,46 @@ int main(int argc, char **argv) {
 	}
 	fclose(fp);
 	printf("wrote %d rows to %s\n", Nkeep, out_path);
+
+	/* Also output a 1D cut of psi along the x axis, computed via psi_at_points
+	   (brute-force summation over the masses), matching the Python notebook's
+	   psi_line computation — this is the true conformal factor, not the
+	   C*tilde_chi quantity that solve() returns on the grid. */
+	{
+		char xcut_path[1024];
+		const char *dot = strrchr(out_path, '.');
+		if (dot && dot != out_path) {
+			const int base_len = (int)(dot - out_path);
+			snprintf(xcut_path, sizeof(xcut_path), "%.*s_xcut%s", base_len, out_path, dot);
+		} else {
+			snprintf(xcut_path, sizeof(xcut_path), "%s_xcut", out_path);
+		}
+
+		const int K = 200;
+		const double xmin = -3.0, xmax = 3.0;
+		std::vector<std::array<double, 3>> r_eval(K);
+		for (int i = 0; i < K; ++i) {
+			const double x = xmin + (xmax - xmin) * (double)i / (double)(K - 1);
+			r_eval[i] = {x, 0.0, 0.0};
+		}
+
+		std::vector<double> chi(Ngrid);
+		for (int i = 0; i < Ngrid; ++i) chi[i] = psi[i] - 1.0;
+
+		auto psi_line = solver.psi_at_points(r_eval, chi);
+
+		FILE *fx = fopen(xcut_path, "w");
+		if (!fx) {
+			fprintf(stderr, "failed to open %s for writing\n", xcut_path);
+		} else {
+			fprintf(fx, "# 1:x 2:y 3:z 4:psi  (x-axis cut via psi_at_points, K=%d)\n", K);
+			for (int i = 0; i < K; ++i) {
+				fprintf(fx, "%14.7e %14.7e %14.7e %14.7e\n", r_eval[i][0], 0.0, 0.0, psi_line[i]);
+			}
+			fclose(fx);
+			printf("wrote %d rows (x-axis cut) to %s\n", K, xcut_path);
+		}
+	}
 
 	return 0;
 }

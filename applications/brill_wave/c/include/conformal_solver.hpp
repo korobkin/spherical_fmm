@@ -194,6 +194,30 @@ struct conformal_solver_t {
 	int getNkeep() const {
 		return Nkeep;
 	}
+	/* Evaluate psi(r) = 1 - (1/4π) Σ_j m_j / |r - r_j| at arbitrary points,
+	   mirroring ConformalFactorSolver.psi_at_points in the Python reference. */
+	std::vector<real> psi_at_points(const std::vector<std::array<real, NDIM>> &r_eval, const std::vector<real> &chi) const {
+		const size_t K = r_eval.size();
+		std::vector<real> psi_out(K);
+		auto m = masses_from_chi(chi);
+		const real inv4pi = 1.0 / (4.0 * M_PI);
+		const real eps2 = softening * softening;
+		for (size_t i = 0; i < K; ++i) {
+			const auto &xyzi = r_eval[i];
+			real sum = 0.0;
+			for (size_t j = 0; j < Ngrid; ++j) {
+				const auto &xyzj = r_xyz[j];
+				real r2 = eps2;
+				for (int d = 0; d < NDIM; ++d) {
+					const real dd = xyzi[d] - xyzj[d];
+					r2 += dd * dd;
+				}
+				sum += m[j] / std::sqrt(r2);
+			}
+			psi_out[i] = 1.0 - inv4pi * sum;
+		}
+		return psi_out;
+	}
 
 private:
 	size_t n;
