@@ -105,10 +105,9 @@ class ConformalFactorSolver:
     def chi_from_masses(self, m: np.ndarray) -> np.ndarray:
         """Brute-force version of step 9.
 
-        Uses the same kernel implied by step 12:
-            psi(r) = 1 - (1/4π) * Σ_a m_a / |r - r_a|
-        hence
-            chi(r) = psi - 1 = - (1/4π) * Σ_a m_a / |r - r_a|.
+        Since the 1/(4π) factor is already absorbed into the masses
+        (step 7: m_a = V_a V_a (1+χ_a) / 4π), the sum is simply:
+            χ̃(r) = − Σ_a m_a / |r − r_a|.
 
         For points exactly coincident with a source, this implementation either
         excludes self-interactions (default) or uses a softening length.
@@ -118,11 +117,11 @@ class ConformalFactorSolver:
             raise ValueError("m must have shape (N,)")
 
         inv_r = self._pairwise_kernel(self.r, self.r)
-        if self.exclude_self and self.softening == 0.0:
+        if self.exclude_self:
             np.fill_diagonal(inv_r, 0.0)
 
         potential = inv_r @ m
-        return -(1.0 / (4.0 * np.pi)) * potential
+        return -potential
 
     def solve(
         self,
@@ -183,7 +182,11 @@ class ConformalFactorSolver:
         return psi, ConvergenceInfo(iterations=max_iter, converged=False, last_error=last_err)
 
     def psi_at_points(self, r_eval: np.ndarray, *, chi: np.ndarray) -> np.ndarray:
-        """Step 12: evaluate psi(r) at arbitrary points via brute-force summation."""
+        """Step 12: evaluate psi(r) at arbitrary points via brute-force summation.
+
+        Since the 1/(4π) is absorbed into the masses:
+            ψ(r) = 1 − Σ_a m_a / |r − r_a|.
+        """
         r_eval = np.asarray(r_eval, dtype=self.r.dtype)
         if r_eval.ndim != 2 or r_eval.shape[1] != 3:
             raise ValueError("r_eval must have shape (K, 3)")
@@ -192,4 +195,4 @@ class ConformalFactorSolver:
         inv_r = self._pairwise_kernel(r_eval, self.r)
 
         potential = inv_r @ m
-        return 1.0 - (1.0 / (4.0 * np.pi)) * potential
+        return 1.0 - potential

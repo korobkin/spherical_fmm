@@ -3,3 +3,5 @@ __pycache__
 .*.swp
 *.o
 output.dat
+conformal_demo
+output_xcut.dat

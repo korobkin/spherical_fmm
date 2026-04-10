@@ -77,7 +77,7 @@ struct conformal_solver_t {
 		return r_xyz[i];
 	}
 	real getW() const {
-		return std::inner_product(vol.begin(), vol.end(), vol.begin(), real(0));
+		return std::inner_product(vol.begin(), vol.end(), V.begin(), real(0));
 	}
 	auto normalize_chi(std::vector<real> const &tilde_chi) const {
 		std::vector<real> chi_out(Ngrid);
@@ -102,7 +102,6 @@ struct conformal_solver_t {
 	}
 	std::vector<real> chi_from_masses(const std::vector<real> &m) const {
 		std::vector<real> tilde_chi_next_out(Ngrid);
-		const real inv4pi = 1.0 / (4.0 * M_PI);
 		const real eps2 = softening * softening;
 
 		for (size_t i = 0; i < Ngrid; ++i) {
@@ -110,7 +109,7 @@ struct conformal_solver_t {
 
 			real sum = 0.0;
 			for (size_t j = 0; j < Ngrid; ++j) {
-				if (exclude_self && eps2 == 0.0 && j == i) continue;
+				if (exclude_self && j == i) continue;
 
 				const auto &xyzj = r_xyz[j];
 				auto const r2 =
@@ -120,7 +119,7 @@ struct conformal_solver_t {
 				sum += m[j] * inv(std::sqrt(r2));
 			}
 
-			tilde_chi_next_out[i] = -inv4pi * sum;
+			tilde_chi_next_out[i] = -sum;
 		}
 		return tilde_chi_next_out;
 	}
@@ -194,13 +193,12 @@ struct conformal_solver_t {
 	int getNkeep() const {
 		return Nkeep;
 	}
-	/* Evaluate psi(r) = 1 - (1/4π) Σ_j m_j / |r - r_j| at arbitrary points,
-	   mirroring ConformalFactorSolver.psi_at_points in the Python reference. */
+	/* Evaluate psi(r) = 1 - Σ_j m_j / |r - r_j| at arbitrary points (step 12).
+	   The 1/(4π) is absorbed into the masses (step 7). */
 	std::vector<real> psi_at_points(const std::vector<std::array<real, NDIM>> &r_eval, const std::vector<real> &chi) const {
 		const size_t K = r_eval.size();
 		std::vector<real> psi_out(K);
 		auto m = masses_from_chi(chi);
-		const real inv4pi = 1.0 / (4.0 * M_PI);
 		const real eps2 = softening * softening;
 		for (size_t i = 0; i < K; ++i) {
 			const auto &xyzi = r_eval[i];
@@ -214,7 +212,7 @@ struct conformal_solver_t {
 				}
 				sum += m[j] / std::sqrt(r2);
 			}
-			psi_out[i] = 1.0 - inv4pi * sum;
+			psi_out[i] = 1.0 - sum;
 		}
 		return psi_out;
 	}
