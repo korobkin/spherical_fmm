@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <array>
 #include <cmath>
 #include <utility>
 #include <algorithm>
@@ -670,7 +671,7 @@ struct spherical_expansion: public std::array<complex, (P + 1) * (P + 2) / 2> {
 };
 
 struct hash {
-	size_t operator()(std::array<int, 3> i) const {
+	size_t operator()(std::array<int, 3> i) const noexcept {
 		return i[0] * 12345 + i[1] * 42 + i[2];
 	}
 };

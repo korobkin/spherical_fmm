@@ -1,5 +1,5 @@
 CC ?= g++
-CFLAGS ?= -O2 -std=c++20 -Wall -Wextra -Wpedantic
+CFLAGS ?= -Ofast -march=native -std=c++20 -Wall -Wextra -Wpedantic
 CPPFLAGS ?= -Iinclude
 LDFLAGS ?=
 LDLIBS ?= -lm -lstdc++

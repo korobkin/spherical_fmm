@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
 	auto const [psi, info] = solver.solve(tol, max_iter, norm, verbose);
 	double pmin = psi[0], pmax = psi[0];
 	int const Nkeep = solver.getNkeep();
-	for (int i = 1; i < Nkeep; ++i) {
+	for (int i = 1; i < Ngrid; ++i) {
 		if (psi[i] < pmin) pmin = psi[i];
 		if (psi[i] > pmax) pmax = psi[i];
 	}
