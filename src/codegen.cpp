@@ -1,20 +1,18 @@
-#include <stdio.h>
+#include <algorithm>
 #include <array>
-#include <cmath>
-#include <utility>
-#include <algorithm>
-#include <vector>
 #include <climits>
-#include <unordered_map>
+#include <cmath>
 #include <complex>
-#include <set>
-#include <algorithm>
 #include <cstring>
 #include <functional>
-#include <array>
+#include <set>
 #include <stack>
+#include <stdio.h>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
-//#define USE_INTEL
+// #define USE_INTEL
 
 #define CHECK_NAN
 
@@ -31,7 +29,7 @@
 #define USE_CUDA
 #endif
 
-//#define USE_SCALED
+// #define USE_SCALED
 
 struct entry_t {
 	int l;
@@ -52,11 +50,9 @@ const auto cmp = [](entry_t a, entry_t b) {
 	}
 };
 
-enum stage_t {
-	PRE1, PRE2, POST1, POST2, XZ1, XZ2, FULL
-};
+enum stage_t { PRE1, PRE2, POST1, POST2, XZ1, XZ2, FULL };
 
-//#define NO_DIPOLE
+// #define NO_DIPOLE
 #define USE_PERIODIC
 
 struct flops_t {
@@ -72,10 +68,10 @@ struct flops_t {
 	flops_t() {
 		reset();
 	}
-	flops_t(const flops_t&) = default;
-	flops_t(flops_t&&) = default;
-	flops_t& operator=(const flops_t&) = default;
-	flops_t& operator=(flops_t&&) = default;
+	flops_t(const flops_t &) = default;
+	flops_t(flops_t &&) = default;
+	flops_t &operator=(const flops_t &) = default;
+	flops_t &operator=(flops_t &&) = default;
 	void reset() {
 		r = 0;
 		i = 0;
@@ -87,7 +83,7 @@ struct flops_t {
 		con = 0;
 		asgn = 0;
 	}
-	flops_t& operator+=(const flops_t &other) {
+	flops_t &operator+=(const flops_t &other) {
 		r += other.r;
 		i += other.i;
 		fma += other.fma;
@@ -99,7 +95,7 @@ struct flops_t {
 		rcmp += other.rcmp;
 		return *this;
 	}
-	flops_t& operator*=(int a) {
+	flops_t &operator*=(int a) {
 		r *= a;
 		i *= a;
 		fma *= a;
@@ -120,7 +116,11 @@ static int ntab = 0;
 static int tprint_on = true;
 static std::string *tprint_str;
 
-#define TAB0() if( ntab != 0 ) { printf( "Tab mismatch (%i) %s %i\n", ntab,  __FILE__, __LINE__); ntab = 0; }
+#define TAB0()                                                                                                                             \
+	if (ntab != 0) {                                                                                                                       \
+		printf("Tab mismatch (%i) %s %i\n", ntab, __FILE__, __LINE__);                                                                     \
+		ntab = 0;                                                                                                                          \
+	}
 
 #ifdef NO_DIPOLE
 constexpr static int nodip = true;
@@ -140,14 +140,14 @@ constexpr static int scaled = 0;
 
 std::array<std::unordered_map<std::string, flops_t>, PMAX + 1> flops_map;
 
-//#define FLOAT
-//#define DOUBLE
-//#define CUDA_FLOAT
-//#define CUDA_DOUBLE
-//#define VEC_DOUBLE
-//#define VEC_FLOAT
-//#define VEC_DOUBLE_SIZE 2
-//#define VEC_FLOAT_SIZE 8
+// #define FLOAT
+// #define DOUBLE
+// #define CUDA_FLOAT
+// #define CUDA_DOUBLE
+// #define VEC_DOUBLE
+// #define VEC_FLOAT
+// #define VEC_DOUBLE_SIZE 2
+// #define VEC_FLOAT_SIZE 8
 std::vector<int> precision;
 std::vector<int> simd;
 std::vector<int> simd_size;
@@ -162,8 +162,16 @@ void regular_harmonic_full(int);
 
 static std::string root_dir = std::string(ROOT_DIR) + "/include/";
 
-#define ASPRINTF(...) if( asprintf(__VA_ARGS__) == 0 ) {printf( "ASPRINTF error %s %i\n", __FILE__, __LINE__); abort(); }
-#define SYSTEM(...) if( system(__VA_ARGS__) != 0 ) {printf( "SYSTEM error %s %i\n", __FILE__, __LINE__); abort(); }
+#define ASPRINTF(...)                                                                                                                      \
+	if (asprintf(__VA_ARGS__) == 0) {                                                                                                      \
+		printf("ASPRINTF error %s %i\n", __FILE__, __LINE__);                                                                              \
+		abort();                                                                                                                           \
+	}
+#define SYSTEM(...)                                                                                                                        \
+	if (system(__VA_ARGS__) != 0) {                                                                                                        \
+		printf("SYSTEM error %s %i\n", __FILE__, __LINE__);                                                                                \
+		abort();                                                                                                                           \
+	}
 
 #define DEBUGNAN
 
@@ -183,13 +191,13 @@ static std::vector<std::string> lines[2];
 static std::string header = "sfmm.hpp";
 bool enable_scaled = true;
 static std::string full_header = std::string("./generated_code/include/") + header;
-//static std::string full_detail_header = std::string("./generated_code/include/detail/") + header;
+// static std::string full_detail_header = std::string("./generated_code/include/detail/") + header;
 
-static const char* period_name() {
+static const char *period_name() {
 	return periodic ? "_periodic" : "";
 }
 
-static const char* scaled_name() {
+static const char *scaled_name() {
 	return scaled ? "_scaled" : "";
 }
 
@@ -200,7 +208,7 @@ std::string random_macro() {
 	do {
 		num = rand();
 	} while (used.find(num) != used.end());
-	ASPRINTF(&macro, "SFMM_MACRO_%0i_%s", (unsigned ) num, type.c_str());
+	ASPRINTF(&macro, "SFMM_MACRO_%0i_%s", (unsigned)num, type.c_str());
 	used.insert(num);
 	std::string result = macro;
 	free(macro);
@@ -211,11 +219,11 @@ std::string type_macro() {
 	return "SFMM_MACRO_" + type;
 }
 
-static const char* dip_name() {
+static const char *dip_name() {
 	return nodip ? "_wo_dipole" : "";
 }
 
-template<class ...Args>
+template <class... Args>
 std::string print2str(const char *fstr, Args &&...args) {
 	std::string result;
 	char *str;
@@ -225,7 +233,7 @@ std::string print2str(const char *fstr, Args &&...args) {
 	return result;
 }
 
-template<class ...Args>
+template <class... Args>
 std::string print2str(const char *fstr) {
 	std::string result = fstr;
 	return result;
@@ -326,7 +334,7 @@ flops_t accumulate_flops(int P) {
 	flops_t fps;
 	fps = rescale_flops(P);
 	fps.r += (P + 1) * (P + 1) + 1;
-	//fps.a++;
+	// fps.a++;
 	return fps;
 }
 
@@ -403,10 +411,9 @@ flops_t erfcexp_flops() {
 		}
 	}
 	return fps;
-
 }
 
-//#define COUNT_POT_FLOPS
+// #define COUNT_POT_FLOPS
 flops_t parse_flops(const char *line);
 
 flops_t count_flops(std::string fname) {
@@ -424,10 +431,10 @@ flops_t count_flops(std::string fname) {
 			int j = 0;
 			fps += parse_flops(line);
 		}
-//		printf( "%i, %i : %s", fps.r, cnt, line);
+		//		printf( "%i, %i : %s", fps.r, cnt, line);
 	}
 
-//	printf( "%i\n", ln);
+	//	printf( "%i\n", ln);
 	fclose(fp);
 	return fps;
 }
@@ -476,11 +483,11 @@ void reset_running_flops() {
 
 flops_t get_running_flops(bool simd = true) {
 	flops_t r = running_flops;
-	//running_flops.reset();
+	// running_flops.reset();
 	return r;
 }
 
-template<class ...Args>
+template <class... Args>
 void tprint(const char *str, Args &&...args) {
 	if (fp == nullptr) {
 		return;
@@ -521,7 +528,7 @@ void tprint_new_chain() {
 	current_chain = best;
 }
 
-template<class ...Args>
+template <class... Args>
 void tprint_chain(const char *fstr, Args &&...args) {
 	std::string str;
 	for (int i = 0; i < ntab; i++) {
@@ -531,7 +538,7 @@ void tprint_chain(const char *fstr, Args &&...args) {
 	ASPRINTF(&buf, fstr, std::forward<Args>(args)...)
 	str += buf;
 	free(buf);
-//	printf( "%i\n", current_chain);
+	//	printf( "%i\n", current_chain);
 	inschains[current_chain].push_back(str);
 }
 
@@ -562,7 +569,7 @@ void tprint_flush_chains() {
 		double largest = 0;
 		for (int i = 0; i < inschains.size(); i++) {
 			if (n[i] < inschains[i].size()) {
-				double value = (double) (inschains[i].size() - n[i]) / (inschains[i].size() + 1);
+				double value = (double)(inschains[i].size() - n[i]) / (inschains[i].size() + 1);
 				if (value >= largest) {
 					largest = value;
 					best = i;
@@ -585,7 +592,7 @@ double nonepow(int i) {
 	return i % 2 == 0 ? 1.0 : -1.0;
 }
 
-template<class T>
+template <class T>
 void ewald_limits(int &r2, int &h2, double alpha) {
 	r2 = 0;
 	h2 = 0;
@@ -660,10 +667,7 @@ void ewald_limits(int &r2, int &h2, double alpha) {
 								const double h2 = xi * xi + yi * yi + zi * zi;
 								const double hdotx = x * xi + y * yi + z * zi;
 								const double r = sqrt(x * x + y * y + z * z);
-								double a = r
-										* fabs(
-												cos(2.0 * M_PI * hdotx) * exp(-M_PI * M_PI * h2 / (alpha * alpha))
-														/ (h2 * sqrt(M_PI)));
+								double a = r * fabs(cos(2.0 * M_PI * hdotx) * exp(-M_PI * M_PI * h2 / (alpha * alpha)) / (h2 * sqrt(M_PI)));
 								m = std::max(m, fabs(a));
 							}
 						}
@@ -755,9 +759,7 @@ flops_t parse_flops(const char *line) {
 	return fps0;
 }
 
-enum arg_type {
-	LIT, PTR, CPTR, EXP, HEXP, XYEXP, MUL, CEXP, CMUL, FORCE, VEC3
-};
+enum arg_type { LIT, PTR, CPTR, EXP, HEXP, XYEXP, MUL, CEXP, CMUL, FORCE, VEC3 };
 
 void init_real(std::string var) {
 	if (simd[typenum]) {
@@ -809,11 +811,10 @@ void init_reals(std::string var, int cnt) {
 #ifdef CHECK_NAN
 		fprintf(fp, "#endif /* NDEBUG */ \n");
 #endif
-
 	}
 }
 
-template<class ...Args>
+template <class... Args>
 std::string func_args(int P, const char *arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == VEC3) {
@@ -845,14 +846,14 @@ std::string func_args(int P, const char *arg, arg_type atype, int term) {
 	return str;
 }
 
-template<class ...Args>
+template <class... Args>
 std::string func_args(int P, const char *arg, arg_type atype, Args &&...args) {
 	auto str = func_args(P, arg, atype, 1);
 	str += std::string(", ");
 	str += func_args(P, std::forward<Args>(args)...);
 	return str;
 }
-template<class ...Args>
+template <class... Args>
 std::string func_args_sig(int P, const char *arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == VEC3) {
@@ -883,7 +884,7 @@ std::string func_args_sig(int P, const char *arg, arg_type atype, int term) {
 	return str;
 }
 
-template<class ...Args>
+template <class... Args>
 std::string func_args_sig(int P, const char *arg, arg_type atype, Args &&...args) {
 	auto str = func_args_sig(P, arg, atype, 1);
 	str += std::string(", ");
@@ -891,7 +892,7 @@ std::string func_args_sig(int P, const char *arg, arg_type atype, Args &&...args
 	return str;
 }
 
-template<class ...Args>
+template <class... Args>
 std::string func_args_call(int P, const char *arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == EXP) {
@@ -914,7 +915,7 @@ std::string func_args_call(int P, const char *arg, arg_type atype, int term) {
 	return str;
 }
 
-template<class ...Args>
+template <class... Args>
 std::string func_args_call(int P, const char *arg, arg_type atype, Args &&...args) {
 	auto str = func_args_call(P, arg, atype, 1);
 	str += std::string(", ");
@@ -922,7 +923,7 @@ std::string func_args_call(int P, const char *arg, arg_type atype, Args &&...arg
 	return str;
 }
 
-template<class ...Args>
+template <class... Args>
 void func_args_cover(int P, const char *arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == EXP) {
@@ -940,13 +941,13 @@ void func_args_cover(int P, const char *arg, arg_type atype, int term) {
 	}
 }
 
-template<class ...Args>
+template <class... Args>
 void func_args_cover(int P, const char *arg, arg_type atype, Args &&...args) {
 	func_args_cover(P, arg, atype, 1);
 	func_args_cover(P, std::forward<Args>(args)...);
 }
 
-template<class ...Args>
+template <class... Args>
 void func_args_dummies(int P, const char *arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == EXP) {
@@ -968,7 +969,7 @@ void func_args_dummies(int P, const char *arg, arg_type atype, int term) {
 	}
 }
 
-template<class ...Args>
+template <class... Args>
 void func_args_dummies(int P, const char *arg, arg_type atype, Args &&...args) {
 	func_args_dummies(P, arg, atype, 1);
 	func_args_dummies(P, std::forward<Args>(args)...);
@@ -996,9 +997,9 @@ std::string timing_body;
 std::string current_sig;
 int timing_cnt = 0;
 
-template<class ... Args>
-std::string func_header(const char *func, int P, bool pub, bool calcpot, bool timing, bool flops, bool vec,
-		std::string head, Args &&...args) {
+template <class... Args>
+std::string func_header(const char *func, int P, bool pub, bool calcpot, bool timing, bool flops, bool vec, std::string head,
+						Args &&...args) {
 	static std::set<std::string> igen;
 	reset_running_flops();
 	std::string func_name = std::string(func);
@@ -1050,10 +1051,10 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 		}
 	}
 	std::string func1 = std::string(func) + std::string("_") + type;
-	//file_name = dir + "/" + file_name;
+	// file_name = dir + "/" + file_name;
 	set_file(file_name);
-//	tprint("#include \"%s\"\n", header.c_str());
-//	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
+	//	tprint("#include \"%s\"\n", header.c_str());
+	//	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
 	tprint("\n");
 	tprint("namespace sfmm {\n");
 	tprint("#ifndef __CUDACC__\n");
@@ -1073,10 +1074,10 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 	tprint("using V = %s;\n", itype[typenum].c_str());
 	tprint("using TCONVERT = T;\n");
 	tprint("using VCONVERT = V;\n");
-	tprint("const static auto TCAST = [](%s a) { return %s(%s(a));};\n", base_rtype[typenum].c_str(),
-			rtype[typenum].c_str(), base_rtype[typenum].c_str());
-	tprint("const static auto VCAST = [](%s a) { return %s(%s(a));};\n", base_itype[typenum].c_str(),
-			itype[typenum].c_str(), base_itype[typenum].c_str());
+	tprint("const static auto TCAST = [](%s a) { return %s(%s(a));};\n", base_rtype[typenum].c_str(), rtype[typenum].c_str(),
+		   base_rtype[typenum].c_str());
+	tprint("const static auto VCAST = [](%s a) { return %s(%s(a));};\n", base_itype[typenum].c_str(), itype[typenum].c_str(),
+		   base_itype[typenum].c_str());
 	if (flops) {
 		tprint("if( !(flags & sfmmFLOPsOnly) ) {\n");
 		indent();
@@ -1096,21 +1097,22 @@ void fixed_point_covers() {
 	if (simd[typenum]) {
 	}
 	constexpr int N = 8;
-	const char *protos[N] =
-			{
-					"SFMM_PREFIX inline int M2L%s(expansion<%s,P>& L, const multipole<%s,P>& M, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
-					"SFMM_PREFIX inline int M2P%s(force_type<%s>& f, const multipole<%s,P>& M, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
-					"SFMM_PREFIX inline int P2L%s(expansion<%s,P>& L, %s m, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
-					"SFMM_PREFIX inline int P2P%s(force_type<%s>& f, %s m, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
-					"SFMM_PREFIX inline int L2L%s(expansion<%s,P>& L, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
-					"SFMM_PREFIX inline int L2P%s(force_type<%s>& f, expansion<%s,P>& L, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
-					"SFMM_PREFIX inline int P2M%s(multipole<%s,P>& M, %s m, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
-					"SFMM_PREFIX inline int M2M%s(multipole<%s,P>& M, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n" };
+	const char *protos[N] = {
+		"SFMM_PREFIX inline int M2L%s(expansion<%s,P>& L, const multipole<%s,P>& M, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags "
+		") {\n",
+		"SFMM_PREFIX inline int M2P%s(force_type<%s>& f, const multipole<%s,P>& M, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags "
+		") {\n",
+		"SFMM_PREFIX inline int P2L%s(expansion<%s,P>& L, %s m, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
+		"SFMM_PREFIX inline int P2P%s(force_type<%s>& f, %s m, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
+		"SFMM_PREFIX inline int L2L%s(expansion<%s,P>& L, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
+		"SFMM_PREFIX inline int L2P%s(force_type<%s>& f, expansion<%s,P>& L, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
+		"SFMM_PREFIX inline int P2M%s(multipole<%s,P>& M, %s m, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
+		"SFMM_PREFIX inline int M2M%s(multipole<%s,P>& M, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n"};
 
-	const char *calls[N] = { "return M2L%s(L, M, dx, flags) + %i;", "return M2P%s(f, M, dx, flags) + %i;",
-			"return P2L%s(L, m, dx, flags) + %i;", "return P2P%s(f, m, dx, flags) + %i;",
-			"return L2L%s(L, dx, flags) + %i;", "return L2P%s(f, L, dx, flags) + %i;",
-			"return P2M%s(M, m, dx, flags) + %i;", "return M2M%s(M, dx, flags) + %i;" };
+	const char *calls[N] = {"return M2L%s(L, M, dx, flags) + %i;", "return M2P%s(f, M, dx, flags) + %i;",
+							"return P2L%s(L, m, dx, flags) + %i;", "return P2P%s(f, m, dx, flags) + %i;",
+							"return L2L%s(L, dx, flags) + %i;",	   "return L2P%s(f, L, dx, flags) + %i;",
+							"return P2M%s(M, m, dx, flags) + %i;", "return M2M%s(M, dx, flags) + %i;"};
 
 	tprint("SFMM_PREFIX inline %s distance(const %s& a, const %s& b) {\n", type.c_str(), type.c_str(), type.c_str());
 	indent();
@@ -1119,7 +1121,7 @@ void fixed_point_covers() {
 	tprint("return copysign(fmin(absc, %s(1) - absc), c * (%s(0.5) - absc));\n", type.c_str(), type.c_str());
 	deindent();
 	tprint("}\n");
-	const int nparams[N] = { 2, 2, 2, 2, 1, 2, 2, 1 };
+	const int nparams[N] = {2, 2, 2, 2, 1, 2, 2, 1};
 	for (int i = 0; i < N; i++) {
 		for (int k = 0; k < 2; k++) {
 			if (i >= 4 && k == 1) {
@@ -1171,14 +1173,12 @@ void fixed_point_covers() {
 
 void create_func_data_ptr(std::string fname) {
 	return;
-	tprint("static auto* const func_data_ptr = detail::operator_initialize((void*)((%s) &%s));\n", current_sig.c_str(),
-			fname.c_str());
+	tprint("static auto* const func_data_ptr = detail::operator_initialize((void*)((%s) &%s));\n", current_sig.c_str(), fname.c_str());
 }
 
 void open_timer(std::string fname) {
 	return;
-	tprint("static auto* func_data_ptr = detail::operator_initialize((void*)((%s) &%s));\n", current_sig.c_str(),
-			fname.c_str());
+	tprint("static auto* func_data_ptr = detail::operator_initialize((void*)((%s) &%s));\n", current_sig.c_str(), fname.c_str());
 	tprint("timer tm;\n");
 	tprint("if( flags & sfmmProfilingOn ) {\n");
 	indent();
@@ -1239,13 +1239,13 @@ constexpr int cindex(int l, int m) {
 	return l * (l + 1) / 2 + m;
 }
 
-template<class T>
+template <class T>
 T nonepow(int m) {
 	return m % 2 == 0 ? double(1) : double(-1);
 }
 
-template<int P>
-struct spherical_expansion: public std::array<complex, (P + 1) * (P + 2) / 2> {
+template <int P>
+struct spherical_expansion : public std::array<complex, (P + 1) * (P + 2) / 2> {
 	inline complex operator()(int n, int m) const {
 		if (m >= 0) {
 			return (*this)[cindex(n, m)];
@@ -1300,7 +1300,7 @@ bool close21(double a) {
 }
 
 void z_rot2(int P, const char *dst, const char *src, stage_t stage, std::string opname, bool init, bool multipole,
-		std::pair<int, int> range = std::make_pair(-1, -1)) {
+			std::pair<int, int> range = std::make_pair(-1, -1)) {
 	if (range.first == -1) {
 		range.first = 1;
 		range.second = P;
@@ -1326,13 +1326,12 @@ void z_rot2(int P, const char *dst, const char *src, stage_t stage, std::string 
 		index = lindex;
 	}
 	std::vector<int> set_nan;
-	using cmd_t = std::pair<int,std::string>;
+	using cmd_t = std::pair<int, std::string>;
 	std::vector<cmd_t> cmds;
 	cmds.push_back(std::make_pair(0, print2str("%s[0] = %s[0];\n", dst, src)));
 	for (int m = range.first; m <= range.second; m++) {
 		if (!(nodip && m == 1 && multipole)) {
-			cmds.push_back(
-					std::make_pair(index(m, 0), print2str("%s[%i] = %s[%i];\n", dst, index(m, 0), src, index(m, 0))));
+			cmds.push_back(std::make_pair(index(m, 0), print2str("%s[%i] = %s[%i];\n", dst, index(m, 0), src, index(m, 0))));
 		}
 		for (int l = m; l <= P; l++) {
 			if (multipole && nodip && l == 1) {
@@ -1381,44 +1380,30 @@ void z_rot2(int P, const char *dst, const char *src, stage_t stage, std::string 
 			read_ronly = read_ronly || sw;
 			if (read_ionly) {
 				cmds.push_back(
-						std::make_pair(index(l, -m),
-								print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
+					std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
 				cmds.push_back(
-						std::make_pair(index(l, -m),
-								print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
+					std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
 			} else if (read_ronly) {
 				cmds.push_back(
-						std::make_pair(index(l, m),
-								print2str("%s[%i] = %s[%i] * ip[%i];\n", dst, index(l, -m), src, index(l, m), m - 1)));
+					std::make_pair(index(l, m), print2str("%s[%i] = %s[%i] * ip[%i];\n", dst, index(l, -m), src, index(l, m), m - 1)));
 				cmds.push_back(
-						std::make_pair(index(l, m),
-								print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, m), src, index(l, m), m - 1)));
+					std::make_pair(index(l, m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, m), src, index(l, m), m - 1)));
 			} else if (write_ronly) {
 				cmds.push_back(
-						std::make_pair(index(l, -m),
-								print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
-				cmds.push_back(
-						std::make_pair(index(l, m),
-								print2str("%s[%i] = fma(%s[%i], r0[%i], %s[%i]);\n", dst, index(l, m), src, index(l, m), m - 1,
-										dst, index(l, m))));
+					std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
+				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = fma(%s[%i], r0[%i], %s[%i]);\n", dst, index(l, m), src,
+																	 index(l, m), m - 1, dst, index(l, m))));
 				set_nan.push_back(index(l, -m));
 			} else {
 				cmds.push_back(
-						std::make_pair(index(l, -m),
-								print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
+					std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
 				cmds.push_back(
-						std::make_pair(index(l, -m),
-								print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
-				cmds.push_back(
-						std::make_pair(index(l, m),
-								print2str("%s[%i] = fma(%s[%i], r0[%i], %s[%i]);\n", dst, index(l, m), src, index(l, m), m - 1,
-										dst, index(l, m))));
-				cmds.push_back(
-						std::make_pair(index(l, m),
-								print2str("%s[%i] = fma(%s[%i], ip[%i], %s[%i]);\n", dst, index(l, -m), src, index(l, m), m - 1,
-										dst, index(l, -m))));
+					std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
+				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = fma(%s[%i], r0[%i], %s[%i]);\n", dst, index(l, m), src,
+																	 index(l, m), m - 1, dst, index(l, m))));
+				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = fma(%s[%i], ip[%i], %s[%i]);\n", dst, index(l, -m), src,
+																	 index(l, m), m - 1, dst, index(l, -m))));
 			}
-
 		}
 	}
 	std::sort(cmds.begin(), cmds.end(), [](const cmd_t &a, const cmd_t &b) {
@@ -1520,17 +1505,15 @@ void xz_swap2(int P, const char *dst, const char *src, bool inv, stage_t stage, 
 						continue;
 					}
 					if (close21(ops[m][l].first)) {
-						tprint("%s[%i] %s= %s[%i];\n", dst, index(n, m - n), l == 0 ? "" : "+", src,
-								index(n, ops[m][l].second));
+						tprint("%s[%i] %s= %s[%i];\n", dst, index(n, m - n), l == 0 ? "" : "+", src, index(n, ops[m][l].second));
 					} else {
 						if (l == 0) {
 							tprint("%s[%i] = TCAST(%.20e) * %s[%i];\n", dst, index(n, m - n), ops[m][l].first, src,
-									index(n, ops[m][l].second));
+								   index(n, ops[m][l].second));
 						} else {
 							tprint("%s[%i] = fma(TCAST(%.20e), %s[%i], %s[%i]);\n", dst, index(n, m - n), ops[m][l].first, src,
-									index(n, ops[m][l].second), dst, index(n, m - n));
+								   index(n, ops[m][l].second), dst, index(n, m - n));
 						}
-
 					}
 					l += len - 1;
 				}
@@ -1760,8 +1743,8 @@ std::vector<complex> spherical_singular_harmonic(int P, double x, double y, doub
 			O[cindex(m + 1, m)] = double(2 * m + 1) * z * O[cindex(m, m)];
 		}
 		for (int n = m + 2; n <= P; n++) {
-			O[cindex(n, m)] = (double(2 * n - 1) * z * O[cindex(n - 1, m)]
-					- double((n - 1) * (n - 1) - m * m) * r2inv * O[cindex(n - 2, m)]);
+			O[cindex(n, m)] =
+				(double(2 * n - 1) * z * O[cindex(n - 1, m)] - double((n - 1) * (n - 1) - m * m) * r2inv * O[cindex(n - 2, m)]);
 		}
 	}
 	return O;
@@ -1800,8 +1783,7 @@ std::string P2L(int P) {
 	deindent();
 	tprint("}\n");
 	tprint("return %i;\n", get_running_flops().load());
-	timing_body += print2str("\"P2L\", %i, 0, %i, 0.0, 0}", P,
-			get_running_flops(false).load() + flops_map[P][type].load());
+	timing_body += print2str("\"P2L\", %i, 0, %i, 0.0, 0}", P, get_running_flops(false).load() + flops_map[P][type].load());
 	deindent();
 	tprint("}\n");
 	tprint("\n");
@@ -1888,8 +1870,7 @@ std::vector<std::complex<etype>> accurate_greens(int P, etype x, etype y, etype 
 			O[cindex(m + 1, m)] = etype(2 * m + 1) * z * O[cindex(m, m)];
 		}
 		for (int n = m + 2; n <= P; n++) {
-			O[cindex(n, m)] = (etype(2 * n - 1) * z * O[cindex(n - 1, m)]
-					- etype((n - 1) * (n - 1) - m * m) * r2inv * O[cindex(n - 2, m)]);
+			O[cindex(n, m)] = (etype(2 * n - 1) * z * O[cindex(n - 1, m)] - etype((n - 1) * (n - 1) - m * m) * r2inv * O[cindex(n - 2, m)]);
 		}
 	}
 	return O;
@@ -2000,7 +1981,7 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("expansion<%s,%i> G0_st;\n", type.c_str(), P);
 	tprint("T* G0=G0_st.data();\n");
 	int PY = P + PEXTRA;
-//	PY = 2 * (PY / 2);
+	//	PY = 2 * (PY / 2);
 	init_reals("Y", exp_sz(PY));
 	init_real("sw");
 	init_real("r");
@@ -2023,7 +2004,7 @@ std::string greens_ewald(int P, double alpha) {
 	init_real("phi");
 	init_real("rzero");
 	init_real("rsmall");
-//	tprint( "dx = -dx;\n");
+	//	tprint( "dx = -dx;\n");
 	const auto name = [](const char *base, int hx, int hy, int hz) {
 		std::string s = base;
 		const auto add_symbol = [&s](int h) {
@@ -2199,7 +2180,7 @@ std::string greens_ewald(int P, double alpha) {
 				if (h2 <= H2 && h2 > 0) {
 					const double h = sqrt(h2);
 					bool init = false;
-					const auto G0 = spherical_singular_harmonic(P, (double) hx, (double) hy, (double) hz);
+					const auto G0 = spherical_singular_harmonic(P, (double)hx, (double)hy, (double)hz);
 					double gam0inv = 1.0 / sqrt(M_PI);
 					double hpow = 1. / h;
 					double pipow = 1. / sqrt(M_PI);
@@ -2221,19 +2202,23 @@ std::string greens_ewald(int P, double alpha) {
 							}
 							if (G0[cindex(l, m)].real() != (0)) {
 								const double a = c0 * G0[cindex(l, m)].real();
-								//						tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, m), -xsgn * c0 * G0[cindex(l, m)].real(), ax.c_str());
+								//						tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, m), -xsgn * c0 * G0[cindex(l,
+								//m)].real(), ax.c_str());
 								ops[index(l, m)][fabs(a)].push_back(std::make_pair(copysign(1.0, -xsgn * a), ax));
 								if (m != 0) {
-									//								tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, -m), -ysgn * c0 * G0[cindex(l, m)].real(), ay.c_str());
+									//								tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, -m), -ysgn * c0 *
+									//G0[cindex(l, m)].real(), ay.c_str());
 									ops[index(l, -m)][fabs(a)].push_back(std::make_pair(copysign(1.0, -ysgn * a), ay));
 								}
 							}
 							if (G0[cindex(l, m)].imag() != (0)) {
 								const double a = c0 * G0[cindex(l, m)].imag();
-//								tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, m), ysgn * c0 * G0[cindex(l, m)].imag(), ay.c_str());
+								//								tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, m), ysgn * c0 *
+								//G0[cindex(l, m)].imag(), ay.c_str());
 								ops[index(l, -m)][fabs(a)].push_back(std::make_pair(copysign(1.0, ysgn * a), ay));
 								if (m != 0) {
-									//	tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, -m), -xsgn * c0 * G0[cindex(l, m)].imag(), ax.c_str());
+									//	tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, -m), -xsgn * c0 * G0[cindex(l, m)].imag(),
+									//ax.c_str());
 									ops[index(l, -m)][fabs(a)].push_back(std::make_pair(copysign(1.0, -xsgn * a), ax));
 								}
 							}
@@ -2241,7 +2226,6 @@ std::string greens_ewald(int P, double alpha) {
 						gam0inv /= l + 0.5;
 						hpow *= h * h;
 						pipow *= M_PI;
-
 					}
 				}
 			}
@@ -2273,8 +2257,7 @@ std::string greens_ewald(int P, double alpha) {
 									remove.push_back(k);
 									if (these_ops[l].first * these_ops[k].first < 0) {
 										double a = 2 * j->first;
-										next_ops[a].push_back(
-												std::make_pair(these_ops[k].first > 0 ? 1 : -1, these_ops[k].second));
+										next_ops[a].push_back(std::make_pair(these_ops[k].first > 0 ? 1 : -1, these_ops[k].second));
 									}
 								}
 							}
@@ -2298,8 +2281,7 @@ std::string greens_ewald(int P, double alpha) {
 									remove.push_back(k);
 									if (these_ops[l].first * these_ops[k].first > 0) {
 										double a = 2 * j->first;
-										next_ops[a].push_back(
-												std::make_pair(these_ops[k].first > 0 ? 1 : -1, these_ops[k].second));
+										next_ops[a].push_back(std::make_pair(these_ops[k].first > 0 ? 1 : -1, these_ops[k].second));
 									}
 								}
 							}
@@ -2325,13 +2307,12 @@ std::string greens_ewald(int P, double alpha) {
 		ops[ii] = std::move(next_ops);
 	}
 	for (int ii = 0; ii < exp_sz(P); ii++) {
-		std::vector<std::pair<double, std::vector<std::pair<int, std::string> > > > sorted_ops(ops[ii].begin(),
-				ops[ii].end());
+		std::vector<std::pair<double, std::vector<std::pair<int, std::string>>>> sorted_ops(ops[ii].begin(), ops[ii].end());
 		std::sort(sorted_ops.begin(), sorted_ops.end(),
-				[](const std::pair<double, std::vector<std::pair<int, std::string> > > &a,
-						const std::pair<double, std::vector<std::pair<int, std::string> > > &b) {
-					return fabs(a.first) * sqrt(a.second.size()) < fabs(b.first) * sqrt(b.second.size());
-				});
+				  [](const std::pair<double, std::vector<std::pair<int, std::string>>> &a,
+					 const std::pair<double, std::vector<std::pair<int, std::string>>> &b) {
+					  return fabs(a.first) * sqrt(a.second.size()) < fabs(b.first) * sqrt(b.second.size());
+				  });
 		tprint_new_chain();
 		for (auto j = sorted_ops.begin(); j != sorted_ops.end(); j++) {
 			auto op = j->second;
@@ -2339,7 +2320,7 @@ std::string greens_ewald(int P, double alpha) {
 				int sgn = op[0].first > 0 ? 1 : -1;
 				for (int k = 0; k < op.size(); k++) {
 					tprint_chain("tmp%i %c= %s;\n", current_chain, k == 0 ? ' ' : (sgn * op[k].first > 0 ? '+' : '-'),
-							op[k].second.c_str());
+								 op[k].second.c_str());
 				}
 				if (sgn > 0) {
 					tprint_chain("G[%i] = fma(TCAST(+%.20e), tmp%i, G[%i]);\n", ii, sgn * j->first, current_chain, ii);
@@ -2478,10 +2459,9 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("\n");
 	TAB0();
 	return fname;
-
 }
 
-const char* boolstr(bool b) {
+const char *boolstr(bool b) {
 	return b ? "true" : "false";
 }
 
@@ -2833,15 +2813,14 @@ int M2L_allrot(int P, int Q, int rot) {
 
 std::string flags_header(const char *op, int P, int best) {
 	std::string str;
-//	str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), op);
+	//	str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), op);
 	str += "\tint rot = -1;\n";
 	str += "\tif( flags & sfmmWithBestOptimization ) {\n";
 	str += "\t\tflags &= ~sfmmWithBestOptimization;\n";
 	str += "\t\trot = " + std::to_string(best) + ";\n";
 	str += "\t}\n";
 	str += "\tif( rot >= 0 ) {\n";
-	str +=
-			"\t\tflags |= (rot == 1 ? sfmmWithSingleRotationOptimization : (rot == 2 ? sfmmWithDoubleRotationOptimization : 0));\n";
+	str += "\t\tflags |= (rot == 1 ? sfmmWithSingleRotationOptimization : (rot == 2 ? sfmmWithDoubleRotationOptimization : 0));\n";
 	str += "\t}\n";
 	return str;
 }
@@ -2885,15 +2864,14 @@ void M2L(int P, int Q) {
 		str += flags_choose3("M2L", "L0_st");
 	} else {
 		func_header("M2P", P, true, false, false, false, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
-		//str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), "M2P");
+		// str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), "M2P");
 		str += "\tint rot = -1;\n";
 		str += "\tif( flags & sfmmWithBestOptimization ) {\n";
 		str += "\t\tflags &= ~sfmmWithBestOptimization;\n";
 		str += "\t\trot = " + std::to_string(bestrot) + ";\n";
 		str += "\t}\n";
 		str += "\tif( rot >= 0 ) {\n";
-		str +=
-				"\t\tflags |= (rot == 1 ? sfmmWithSingleRotationOptimization : (rot == 2 ? sfmmWithDoubleRotationOptimization : 0));\n";
+		str += "\t\tflags |= (rot == 1 ? sfmmWithSingleRotationOptimization : (rot == 2 ? sfmmWithDoubleRotationOptimization : 0));\n";
 		str += "\t}\n";
 		str += flags_choose3("M2P", "f");
 	}
@@ -2906,8 +2884,7 @@ void M2L(int P, int Q) {
 	TAB0();
 }
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L", EXP, (scaled) ? "Min" : "M", CMUL,
-			"dx", VEC3);
+	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L", EXP, (scaled) ? "Min" : "M", CMUL, "dx", VEC3);
 	reset_running_flops();
 	tprint("expansion<%s, %i> G_st;\n", type.c_str(), P);
 	reset_running_flops();
@@ -2952,8 +2929,7 @@ std::string M2L_ewald(int P) {
 }
 
 std::string M2P_ewald(int P) {
-	auto fname = func_header("M2P_ewald", P, true, false, false, true, true, "", "f", FORCE, (scaled) ? "Min" : "M",
-			CMUL, "dx", VEC3);
+	auto fname = func_header("M2P_ewald", P, true, false, false, true, true, "", "f", FORCE, (scaled) ? "Min" : "M", CMUL, "dx", VEC3);
 	reset_running_flops();
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
 	tprint("T* O=O_st.data();\n");
@@ -3012,7 +2988,6 @@ std::string P2L_ewald(int P) {
 		tprint("const %s scale = L0_st.scale();\n", base_rtype[typenum].c_str());
 	} else {
 		tprint("expansion<T,%i> L_st;\n", P);
-
 	}
 	tprint("T* L=L_st.data();\n");
 	tprint("T* L0=L0_st.data();\n");
@@ -3057,7 +3032,6 @@ void func_closer(int P, std::string name, bool pub) {
 		tprint("}\n");
 	}
 	tprint("\n");
-
 }
 
 void M2M_z(int P, int dir) {
@@ -3489,7 +3463,8 @@ void L2L_z(int P, int Q, const char *var = "z", const char *src = "") {
 				e.l = lindex(n, m);
 				e.o = k - 1;
 				cmds.push_back(e);
-				//				tprint("L%s[%i] = fma(Y[%i], L[%i], L%s[%i]);\n", two, lindex(n, m), k - 1, lindex(n + k, m), two, lindex(n, m));
+				//				tprint("L%s[%i] = fma(Y[%i], L[%i], L%s[%i]);\n", two, lindex(n, m), k - 1, lindex(n + k, m), two, lindex(n,
+				//m));
 			}
 		}
 		std::sort(cmds.begin(), cmds.end(), cmp);
@@ -3611,7 +3586,7 @@ int P2P_ewald() {
 				tprint("phi = TCAST(%.20e) * hdotx;\n", 2.0 * M_PI);
 				tprint("s = sin(phi);\n");
 				tprint("c = cos(phi);\n");
-				const double c0 = -1.0 / h2 * exp((double) (-(M_PI * M_PI) / alpha / alpha) * h2) * (double) (1. / (M_PI));
+				const double c0 = -1.0 / h2 * exp((double)(-(M_PI * M_PI) / alpha / alpha) * h2) * (double)(1. / (M_PI));
 				const float c1 = 2.0 * M_PI * c0;
 				tprint("f.potential = fma(mflag, c * TCAST(%.20e), f.potential);\n", c0);
 				tprint("tmp = mflag * s * TCAST(%.20e);\n", c1);
@@ -4045,9 +4020,9 @@ std::string P2M(int P) {
 		init_real("Mdx");
 		init_real("Mdy");
 		init_real("Mdz");
-//		tprint("M[1] = TCAST(0);\n");
-//		tprint("M[2] = TCAST(0);\n");
-//		tprint("M[3] = TCAST(0);\n");
+		//		tprint("M[1] = TCAST(0);\n");
+		//		tprint("M[2] = TCAST(0);\n");
+		//		tprint("M[3] = TCAST(0);\n");
 	}
 	reset_running_flops();
 	if (scaled) {
@@ -4108,8 +4083,7 @@ std::string P2M(int P) {
 		if (n + 2 <= P) {
 			tprint("%s = TCAST(%.20e) * r2 * %s;\n", mstr(n + 2, 0).c_str(), c0, mstr(n, 0).c_str());
 		}
-		tprint("%s = fma(TCAST(%.20e) * z, %s, %s);\n", mstr(n + 1, 0).c_str(), c1, mstr(n, 0).c_str(),
-				mstr(n + 1, 0).c_str());
+		tprint("%s = fma(TCAST(%.20e) * z, %s, %s);\n", mstr(n + 1, 0).c_str(), c1, mstr(n, 0).c_str(), mstr(n + 1, 0).c_str());
 		for (int m = 1; m <= n; m++) {
 			const double c0 = -double(1) / (double((n + 2) * (n + 2)) - double(m * m));
 			const double c1 = double(2 * n + 1) / (double((n + 1) * (n + 1)) - double(m * m));
@@ -4191,12 +4165,11 @@ void L2L(int P, int Q) {
 	tprint("}\n");
 	tprint("\n");
 	TAB0();
-
 }
 
 int flops_t::load() const {
-	return r + 2 * fma + 4 * rdiv;				// + con + rcmp;
-//	return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
+	return r + 2 * fma + 4 * rdiv; // + con + rcmp;
+	//	return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
 }
 
 void math_float(std::string _type) {
@@ -4348,13 +4321,13 @@ void typecast_functions() {
 int main() {
 	printf("generation attributes: ");
 #ifdef USE_FLOAT
-	printf( "float, ");
+	printf("float, ");
 #endif
 #ifdef USE_DOUBLE
-	printf( "double, ");
+	printf("double, ");
 #endif
 #ifdef USE_SIMD
-	printf( "simd, ");
+	printf("simd, ");
 #endif
 	printf("simd double width = %i, ", SIMD_DOUBLE_WIDTH);
 	printf("simd float width = %i, ", SIMD_FLOAT_WIDTH);
@@ -4408,8 +4381,7 @@ int main() {
 #endif
 #endif
 	if (rtype.size() == 0) {
-		printf(
-				"WARNING: Code generator not given any types - enable at least one of SFMM_USE_FLOAT or SFMM_USE_DOUBLE.\n");
+		printf("WARNING: Code generator not given any types - enable at least one of SFMM_USE_FLOAT or SFMM_USE_DOUBLE.\n");
 	}
 	SYSTEM("mkdir -p generated_code\n");
 	SYSTEM("mkdir -p ./generated_code/include\n");
@@ -4538,85 +4510,85 @@ int main() {
 	include("vec3.hpp");
 
 	std::string str1 = "\n#define SFMM_EXPANSION_MEMBERS(classname, type, ppp) \\\n"
-			"\tclass reference { \\\n"
-			"\t\tT* ax; \\\n"
-			"\t\tT* ay; \\\n"
-			"\t\tT rsgn; \\\n"
-			"\t\tT isgn; \\\n"
-			"\tpublic: \\\n"
-			"\t\toperator complex<T>() const { \\\n"
-			"\t\t\tif(ax != ay) { \\\n"
-			"\t\t\t\treturn complex<T>(rsgn * *ax, isgn * *ay); \\\n"
-			"\t\t\t} else { \\\n"
-			"\t\t\t\treturn complex<T>(rsgn * *ax, T(0)); \\\n"
-			"\t\t\t} \\\n"
-			"\t\t} \\\n"
-			"\t\treference& operator=(complex<T> other) { \\\n"
-			"\t\t\t*ax = other.real() * rsgn; \\\n"
-			"\t\t\tif(ax != ay) { \\\n"
-			"\t\t\t\t*ay = other.imag() * isgn; \\\n"
-			"\t\t\t} else { \\\n"
-			"\t\t\t\t*ay = T(0); \\\n"
-			"\t\t\t} \\\n"
-			"\t\t\treturn *this; \\\n"
-			"\t\t} \\\n"
-			"\t\tfriend classname<type,ppp>; \\\n"
-			"\t}; \\\n"
-			"\tSFMM_PREFIX complex<T> operator()(int n, int m) const { \\\n"
-			"\t\tcomplex<T> c; \\\n"
-			"\t\tconst int n2n = n * n + n; \\\n"
-			"\t\tconst int m0 = std::abs(m); \\\n"
+					   "\tclass reference { \\\n"
+					   "\t\tT* ax; \\\n"
+					   "\t\tT* ay; \\\n"
+					   "\t\tT rsgn; \\\n"
+					   "\t\tT isgn; \\\n"
+					   "\tpublic: \\\n"
+					   "\t\toperator complex<T>() const { \\\n"
+					   "\t\t\tif(ax != ay) { \\\n"
+					   "\t\t\t\treturn complex<T>(rsgn * *ax, isgn * *ay); \\\n"
+					   "\t\t\t} else { \\\n"
+					   "\t\t\t\treturn complex<T>(rsgn * *ax, T(0)); \\\n"
+					   "\t\t\t} \\\n"
+					   "\t\t} \\\n"
+					   "\t\treference& operator=(complex<T> other) { \\\n"
+					   "\t\t\t*ax = other.real() * rsgn; \\\n"
+					   "\t\t\tif(ax != ay) { \\\n"
+					   "\t\t\t\t*ay = other.imag() * isgn; \\\n"
+					   "\t\t\t} else { \\\n"
+					   "\t\t\t\t*ay = T(0); \\\n"
+					   "\t\t\t} \\\n"
+					   "\t\t\treturn *this; \\\n"
+					   "\t\t} \\\n"
+					   "\t\tfriend classname<type,ppp>; \\\n"
+					   "\t}; \\\n"
+					   "\tSFMM_PREFIX complex<T> operator()(int n, int m) const { \\\n"
+					   "\t\tcomplex<T> c; \\\n"
+					   "\t\tconst int n2n = n * n + n; \\\n"
+					   "\t\tconst int m0 = std::abs(m); \\\n"
 #ifdef NO_DIPOLE
-	"\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
-	"\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
+					   "\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
+					   "\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
 #else
-			"\t\tconst int ip = n2n + m0; \\\n"
-			"\t\tconst int im = n2n - m0; \\\n"
+					   "\t\tconst int ip = n2n + m0; \\\n"
+					   "\t\tconst int im = n2n - m0; \\\n"
 #endif
-			"\t\tc.real() = o[ip]; \\\n"
-			"\t\tc.imag() = o[im]; \\\n"
-			"\t\tif( m < 0 ) { \\\n"
-			"\t\t\tif( m % 2 == 0 ) { \\\n"
-			"\t\t\t\tc.imag() = -c.imag(); \\\n"
-			"\t\t\t} else { \\\n"
-			"\t\t\t\tc.real() = -c.real(); \\\n"
-			"\t\t\t} \\\n"
-			"\t\t} else if( m == 0 ) { \\\n"
-			"\t\t\tc.imag() = T(0); \\\n"
-			"\t\t} \\\n"
-			"\t\treturn c; \\\n"
-			"\t} \\\n"
-			"\tSFMM_PREFIX reference operator()(int n, int m) { \\\n"
-			"\t\treference ref; \\\n"
-			"\t\tconst int n2n = n * n + n; \\\n"
-			"\t\tconst int m0 = std::abs(m); \\\n"
+					   "\t\tc.real() = o[ip]; \\\n"
+					   "\t\tc.imag() = o[im]; \\\n"
+					   "\t\tif( m < 0 ) { \\\n"
+					   "\t\t\tif( m % 2 == 0 ) { \\\n"
+					   "\t\t\t\tc.imag() = -c.imag(); \\\n"
+					   "\t\t\t} else { \\\n"
+					   "\t\t\t\tc.real() = -c.real(); \\\n"
+					   "\t\t\t} \\\n"
+					   "\t\t} else if( m == 0 ) { \\\n"
+					   "\t\t\tc.imag() = T(0); \\\n"
+					   "\t\t} \\\n"
+					   "\t\treturn c; \\\n"
+					   "\t} \\\n"
+					   "\tSFMM_PREFIX reference operator()(int n, int m) { \\\n"
+					   "\t\treference ref; \\\n"
+					   "\t\tconst int n2n = n * n + n; \\\n"
+					   "\t\tconst int m0 = std::abs(m); \\\n"
 #ifdef NO_DIPOLE
-	"\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
-	"\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
+					   "\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
+					   "\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
 #else
-			"\t\tconst int ip = n2n + m0; \\\n"
-			"\t\tconst int im = n2n - m0; \\\n"
+					   "\t\tconst int ip = n2n + m0; \\\n"
+					   "\t\tconst int im = n2n - m0; \\\n"
 #endif
-			"\t\tref.ax = o + ip; \\\n"
-			"\t\tref.ay = o + im; \\\n"
-			"\t\tref.rsgn = ref.isgn = T(1); \\\n"
-			"\t\tif( m < 0 ) { \\\n"
-			"\t\t\tif( m % 2 == 0 ) { \\\n"
-			"\t\t\t\tref.isgn = -ref.isgn; \\\n"
-			"\t\t\t} else { \\\n"
-			"\t\t\t\tref.rsgn = -ref.rsgn; \\\n"
-			"\t\t\t} \\\n"
-			"\t\t} \\\n"
-			"\t\treturn ref; \\\n"
-			"\t} \\\n"
-			"\tSFMM_PREFIX T* data() { \\\n"
-			"\t\treturn o; \\\n"
-			"\t} \\\n"
-			"\tSFMM_PREFIX const T* data() const { \\\n"
-			"\t\treturn o; \\\n"
-			"\t} \\\n"
-			"\n"
-			"";
+					   "\t\tref.ax = o + ip; \\\n"
+					   "\t\tref.ay = o + im; \\\n"
+					   "\t\tref.rsgn = ref.isgn = T(1); \\\n"
+					   "\t\tif( m < 0 ) { \\\n"
+					   "\t\t\tif( m % 2 == 0 ) { \\\n"
+					   "\t\t\t\tref.isgn = -ref.isgn; \\\n"
+					   "\t\t\t} else { \\\n"
+					   "\t\t\t\tref.rsgn = -ref.rsgn; \\\n"
+					   "\t\t\t} \\\n"
+					   "\t\t} \\\n"
+					   "\t\treturn ref; \\\n"
+					   "\t} \\\n"
+					   "\tSFMM_PREFIX T* data() { \\\n"
+					   "\t\treturn o; \\\n"
+					   "\t} \\\n"
+					   "\tSFMM_PREFIX const T* data() const { \\\n"
+					   "\t\treturn o; \\\n"
+					   "\t} \\\n"
+					   "\n"
+					   "";
 
 	fprintf(fp, "%s", str1.c_str());
 
@@ -4714,16 +4686,16 @@ int main() {
 			set_file(full_header.c_str());
 		}
 	}
-//	printf("./generated_code/include/sfmm.h");
+	//	printf("./generated_code/include/sfmm.h");
 	fflush(stdout);
 	set_file(full_header.c_str());
 	tprint("\n");
 	set_file(full_header.c_str());
 	tprint("namespace detail {\n");
 	tprint("\n");
-//	tprint("#ifndef __CUDACC__\n");
-//	tprint("%s", detail_header_vec.c_str());
-//	tprint("#endif /* __CUDACC__ */\n\n");
+	//	tprint("#ifndef __CUDACC__\n");
+	//	tprint("%s", detail_header_vec.c_str());
+	//	tprint("#endif /* __CUDACC__ */\n\n");
 	tprint("\n");
 	tprint("template<class T, int P, int ALPHA100>\n");
 	tprint("SFMM_PREFIX void greens_ewald_real(expansion<T, P>& G_st, T x, T y, T z) {\n");
@@ -4845,7 +4817,6 @@ int main() {
 				if (periodic && P > 2) {
 					tprint("t = other.trace2();\n");
 				}
-
 			}
 			tprint("return *this;\n");
 			deindent();
@@ -5007,7 +4978,6 @@ int main() {
 			}
 			deindent();
 			tprint("};\n");
-
 		}
 		for (int P = pmin; P <= pmax; P++) {
 			tprint("\n");
@@ -5298,14 +5268,12 @@ int main() {
 			deindent();
 			tprint("};\n");
 			tprint("}\n");
-//			if (!simd[ti]) {
-			fixed_point_covers();
-//			}
-			if (simd[ti]) {
-				tprint("#endif\n");
-			}
 		}
+		fixed_point_covers();
 
+		if (simd[ti]) {
+			tprint("#endif\n");
+		}
 	}
 	str = "";
 	tprint("%s\n", str.c_str());
@@ -5315,63 +5283,63 @@ int main() {
 
 	tprint("\n");
 	str = "template<class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>\n"
-			"inline void apply_padding(V& A, int n) {\n"
-			"\tfor (int i = 0; i < V::size(); i++) {\n"
-			"\t\tapply_padding(A[i], n);\n"
-			"\t}\n"
+		  "inline void apply_padding(V& A, int n) {\n"
+		  "\tfor (int i = 0; i < V::size(); i++) {\n"
+		  "\t\tapply_padding(A[i], n);\n"
+		  "\t}\n"
 #ifdef USE_PERIODIC
-			"\tapply_padding(A.trace2(), n);\n"
+		  "\tapply_padding(A.trace2(), n);\n"
 #endif
-			"}\n"
-			"\n"
-			"template<class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>\n"
-			"inline void apply_mask(V& A, int n) {\n"
-			"\tconst auto mask = create_mask<typename V::type>(n);\n"
-			"\tfor (int i = 0; i < V::size(); i++) {\n"
-			"\t\tA[i] *= mask;\n"
-			"\t}\n"
+		  "}\n"
+		  "\n"
+		  "template<class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>\n"
+		  "inline void apply_mask(V& A, int n) {\n"
+		  "\tconst auto mask = create_mask<typename V::type>(n);\n"
+		  "\tfor (int i = 0; i < V::size(); i++) {\n"
+		  "\t\tA[i] *= mask;\n"
+		  "\t}\n"
 #ifdef USE_PERIODIC
-			"\tA.trace2() *= mask;\n"
+		  "\tA.trace2() *= mask;\n"
 #endif
-			"}\n"
-			"\n"
-			"";
+		  "}\n"
+		  "\n"
+		  "";
 	str += "template<class T, int P, typename std::enable_if<type_traits<T>::is_simd, T>* = nullptr>\n"
-			"inline expansion<typename type_traits<T>::type, P> reduce_sum(const expansion<T, P>& A) {\n"
-			"\tconstexpr int end = expansion<T, P>::size();\n"
+		   "inline expansion<typename type_traits<T>::type, P> reduce_sum(const expansion<T, P>& A) {\n"
+		   "\tconstexpr int end = expansion<T, P>::size();\n"
 #ifdef USE_SCALED
-			"\texpansion<typename type_traits<T>::type, P> B(A.scale());\n"
+		   "\texpansion<typename type_traits<T>::type, P> B(A.scale());\n"
 #else
-			"\texpansion<typename type_traits<T>::type, P> B;\n"
+		   "\texpansion<typename type_traits<T>::type, P> B;\n"
 #endif
-			"\tfor (int i = 0; i < end; i++) {\n"
-			"\t\tB[i] = reduce_sum(A[i]);\n"
-			"\t}\n"
+		   "\tfor (int i = 0; i < end; i++) {\n"
+		   "\t\tB[i] = reduce_sum(A[i]);\n"
+		   "\t}\n"
 #ifdef USE_PERIODIC
-			"\tB.trace2() = reduce_sum(A.trace2());\n"
+		   "\tB.trace2() = reduce_sum(A.trace2());\n"
 #endif
-			"\treturn B;\n"
-			"}\n"
-			"\n"
-			"";
+		   "\treturn B;\n"
+		   "}\n"
+		   "\n"
+		   "";
 
 	str += "template<class T, int P, typename std::enable_if<type_traits<T>::is_simd, T>* = nullptr>\n"
-			"inline multipole<typename type_traits<T>::type, P> reduce_sum(const multipole<T, P>& A) {\n"
-			"\tconstexpr int end = multipole<T, P>::size();\n"
+		   "inline multipole<typename type_traits<T>::type, P> reduce_sum(const multipole<T, P>& A) {\n"
+		   "\tconstexpr int end = multipole<T, P>::size();\n"
 #ifdef USE_SCALED
-			"\tmultipole<typename type_traits<T>::type, P> B(A.scale());\n"
+		   "\tmultipole<typename type_traits<T>::type, P> B(A.scale());\n"
 #else
-			"\tmultipole<typename type_traits<T>::type, P> B;\n"
+		   "\tmultipole<typename type_traits<T>::type, P> B;\n"
 #endif
-			"\tfor (int i = 0; i < end; i++) {\n"
-			"\t\tB[i] = reduce_sum(A[i]);\n"
-			"\t}\n"
+		   "\tfor (int i = 0; i < end; i++) {\n"
+		   "\t\tB[i] = reduce_sum(A[i]);\n"
+		   "\t}\n"
 #ifdef USE_PERIODIC
-			"\tB.trace2() = reduce_sum(A.trace2());\n"
+		   "\tB.trace2() = reduce_sum(A.trace2());\n"
 #endif
-			"\treturn B;\n"
-			"}\n"
-			"";
+		   "\treturn B;\n"
+		   "}\n"
+		   "";
 	fprintf(fp, "%s", str.c_str());
 	fprintf(fp, "}\n");
 	fprintf(fp, "#ifndef SFMM_INCLUDE_DONE\n");
@@ -5406,13 +5374,12 @@ int main() {
 	 tprint("#include \"sfmm.hpp\"\n");
 	 tprint("\n");
 	 */
-	str =
-			"#ifndef __CUDACC__\n"
-					"namespace sfmm {\ninline const simd_f32 simd_fixed32::c0s = simd_f32(std::numeric_limits<std::uint32_t>::max()) + simd_f32(1);\n"
-					"inline const simd_f32 simd_fixed32::c0si = simd_f32(1) / c0s;\n"
-					"inline const simd_f64 simd_fixed64::c0d = simd_f64(std::numeric_limits<std::uint64_t>::max()) + simd_f64(1);\n"
-					"inline const simd_f64 simd_fixed64::c0di = simd_f64(1) / c0d;\n}\n"
-					"#endif\n";
+	str = "#ifndef __CUDACC__\n"
+		  "namespace sfmm {\ninline const simd_f32 simd_fixed32::c0s = simd_f32(std::numeric_limits<std::uint32_t>::max()) + simd_f32(1);\n"
+		  "inline const simd_f32 simd_fixed32::c0si = simd_f32(1) / c0s;\n"
+		  "inline const simd_f64 simd_fixed64::c0d = simd_f64(std::numeric_limits<std::uint64_t>::max()) + simd_f64(1);\n"
+		  "inline const simd_f64 simd_fixed64::c0di = simd_f64(1) / c0d;\n}\n"
+		  "#endif\n";
 	tprint("%s\n", str.c_str());
 
 	return 0;

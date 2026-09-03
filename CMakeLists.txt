@@ -28,8 +28,8 @@ set(SFMM_USE_FLOAT  "1" CACHE STRING "Enable single-precision generation")
 set(SFMM_USE_SIMD   "1" CACHE STRING "Enable SIMD generation")
 set(SFMM_USE_CUDA   "1" CACHE STRING "Enable CUDA generation")
 
-set(SFMM_PMIN "3" CACHE STRING "Minimum expansion order")
-set(SFMM_PMAX "3" CACHE STRING "Maximum expansion order")
+set(SFMM_PMIN "4" CACHE STRING "Minimum expansion order")
+set(SFMM_PMAX "6" CACHE STRING "Maximum expansion order")
 
 set(
     SFMM_DOUBLE_SIMD_WIDTH

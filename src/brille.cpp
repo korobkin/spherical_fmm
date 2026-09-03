@@ -4,12 +4,23 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
+#include <dlfcn.h>
+#include <execinfo.h>
 #include <fenv.h>
 #include <future>
 #include <limits>
+#include <mutex>
+#include <numeric>
+#include <random>
+#include <signal.h>
+#include <string>
+#include <sys/wait.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 #define DEBUG
@@ -25,6 +36,87 @@
 // #define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
+
+namespace fpe_debug {
+
+inline std::atomic<int> current_order{-1};
+inline std::atomic<int> current_theta_tenths{-1};
+inline std::atomic<const char *> current_phase{"startup"};
+
+inline void set_context(int order, int theta_tenths, const char *phase) {
+	current_order.store(order, std::memory_order_relaxed);
+	current_theta_tenths.store(theta_tenths, std::memory_order_relaxed);
+	current_phase.store(phase, std::memory_order_relaxed);
+}
+
+inline void print_addr2line(void *address) {
+	Dl_info info{};
+	if (!dladdr(address, &info) || !info.dli_fname || !info.dli_fbase) {
+		return;
+	}
+
+	const auto offset = reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(info.dli_fbase);
+	char offset_text[32];
+	snprintf(offset_text, sizeof(offset_text), "0x%zx", static_cast<size_t>(offset));
+
+	const pid_t child = fork();
+	if (child == 0) {
+		dup2(STDERR_FILENO, STDOUT_FILENO);
+		execlp("addr2line", "addr2line", "-C", "-f", "-p", "-i", "-e", info.dli_fname, offset_text, static_cast<char *>(nullptr));
+		_exit(127);
+	}
+	if (child > 0) {
+		int status = 0;
+		waitpid(child, &status, 0);
+	}
+}
+
+inline void handler(int signal_number, siginfo_t *info, void *) {
+	const int saved_errno = errno;
+	char header[512];
+	const int theta_tenths = current_theta_tenths.load(std::memory_order_relaxed);
+	const char *phase = current_phase.load(std::memory_order_relaxed);
+	const int length =
+		snprintf(header, sizeof(header),
+				 "\n*** SIGFPE caught ***\n"
+				 "signal=%d code=%d address=%p order=%d theta=%s phase=%s\n"
+				 "backtrace (resolved with addr2line):\n",
+				 signal_number, info ? info->si_code : 0, info ? info->si_addr : nullptr, current_order.load(std::memory_order_relaxed),
+				 theta_tenths >= 0 ? "set" : "unset", phase ? phase : "unknown");
+	if (length > 0) {
+		write(STDERR_FILENO, header, static_cast<size_t>(length));
+	}
+	if (theta_tenths >= 0) {
+		char theta_line[64];
+		const int n = snprintf(theta_line, sizeof(theta_line), "theta=0.%d\n", theta_tenths);
+		if (n > 0) write(STDERR_FILENO, theta_line, static_cast<size_t>(n));
+	}
+
+	void *frames[128];
+	const int frame_count = backtrace(frames, 128);
+	backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+	write(STDERR_FILENO, "\nsource locations:\n", 19);
+	for (int i = 0; i < frame_count; ++i) {
+		print_addr2line(frames[i]);
+	}
+
+	errno = saved_errno;
+	signal(signal_number, SIG_DFL);
+	raise(signal_number);
+}
+
+inline void install() {
+	struct sigaction action {};
+	action.sa_sigaction = handler;
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = SA_SIGINFO | SA_RESETHAND;
+	if (sigaction(SIGFPE, &action, nullptr) != 0) {
+		perror("sigaction(SIGFPE)");
+		abort();
+	}
+}
+
+} // namespace fpe_debug
 
 double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
@@ -56,7 +148,7 @@ class tree {
 	T radius;
 	T scale;
 
-	static const T theta_max;
+	static T theta_max;
 	static const T hsoft;
 	static const int Ngrid;
 	static std::atomic<long long> p2p;
@@ -315,20 +407,23 @@ public:
 		return flops;
 	}
 
-	static size_t compute_gravity_bruteforce() {
+	static std::pair<std::vector<T>, size_t> compute_direct_potentials(const std::vector<size_t> &sample_indices) {
 		const size_t nparts = parts.size();
-		if (nparts == 0) {
-			return 0;
+		std::vector<T> potentials(sample_indices.size(), T(0));
+		if (nparts == 0 || sample_indices.empty()) {
+			return {std::move(potentials), 0};
 		}
-		const size_t nthreads = std::min<size_t>(std::max(1u, 2u * std::thread::hardware_concurrency()), nparts);
+
+		const size_t nthreads = std::min<size_t>(std::max(1u, 2u * std::thread::hardware_concurrency()), sample_indices.size());
 		std::vector<std::future<size_t>> futs;
 		futs.reserve(nthreads);
 		for (size_t thread = 0; thread < nthreads; thread++) {
-			const size_t sink_begin = thread * nparts / nthreads;
-			const size_t sink_end = (thread + 1) * nparts / nthreads;
-			futs.push_back(std::async(std::launch::async, [sink_begin, sink_end, nparts]() {
+			const size_t sample_begin = thread * sample_indices.size() / nthreads;
+			const size_t sample_end = (thread + 1) * sample_indices.size() / nthreads;
+			futs.push_back(std::async(std::launch::async, [sample_begin, sample_end, nparts, &sample_indices, &potentials]() {
 				size_t flops = 0;
-				for (size_t i = sink_begin; i < sink_end; i++) {
+				for (size_t sample = sample_begin; sample < sample_end; sample++) {
+					const size_t i = sample_indices[sample];
 					force_type<V> F;
 					F.init();
 					sfmm::vec3<FV> xsnk;
@@ -347,20 +442,21 @@ public:
 						sfmm::apply_padding(pmass, cnt);
 						flops += cnt * sfmm::P2P(F, sfmm::create_mask<V>(cnt) * pmass, xsrc, xsnk, FLAGS);
 					}
-					forces[i] = sfmm::reduce_sum(F);
+					force_type<T> direct = sfmm::reduce_sum(F);
 					force_type<T> self;
 					self.init();
 					flops += sfmm::P2P(self, masses[i], sfmm::vec3<T>({T(0), T(0), T(0)}), FLAGS);
-					forces[i].potential -= self.potential;
+					potentials[sample] = direct.potential - self.potential;
 				}
 				return flops;
 			}));
 		}
+
 		size_t flops = 0;
 		for (auto &f : futs) {
 			flops += f.get();
 		}
-		return flops;
+		return {std::move(potentials), flops};
 	}
 
 	size_t compute_cell_gravity(expansion_type<T> expansion, std::vector<check_type> dchecklist, std::vector<check_type> echecklist) {
@@ -777,133 +873,145 @@ public:
 		}
 	}
 
-	enum class gravity_method { fmm, bruteforce };
+	struct error_norms {
+		T l1_abs = 0;
+		T l2_abs = 0;
+		T linf_abs = 0;
+		T l1_rel = 0;
+		T l2_rel = 0;
+		T linf_rel = 0;
+	};
 
-	static void iterate_brill(gravity_method method, int iterations = 40, T target_mass = T(0.01), T omega = T(0.25)) {
-		std::vector<T> chi_old(parts.size());
-		std::vector<T> chi_next(parts.size());
-		const char *name = method == gravity_method::fmm ? "FMM" : "brute";
-		for (int iter = 0; iter < iterations; iter++) {
-			normalize_chi(target_mass);
-			chi_old = chi;
-			update_masses();
-			for (auto &f : forces) {
-				f.init();
-			}
-			auto const t0 = std::chrono::steady_clock::now();
-
-			size_t flops = 0;
-			if (method == gravity_method::fmm) {
-				reset_counters();
-				flops += form_trees();
-				flops += compute_gravity();
-			} else {
-				flops += compute_gravity_bruteforce();
-			}
-
-			auto const t1 = std::chrono::steady_clock::now();
-			const double seconds = std::chrono::duration<double>(t1 - t0).count();
-			for (size_t i = 0; i < parts.size(); i++) {
-				chi[i] = forces[i].potential;
-			}
-			normalize_chi(target_mass);
-			chi_next = chi;
-			T l2 = 0;
-			T norm = 0;
-			for (size_t i = 0; i < parts.size(); i++) {
-				const T damped = (T(1) - omega) * chi_old[i] + omega * chi_next[i];
-				l2 += sfmm::sqr(damped - chi_old[i]);
-				norm += sfmm::sqr(damped);
-				chi[i] = damped;
-			}
-			const T rel_update = norm > T(0) ? std::sqrt(l2 / norm) : T(0);
-			printf("%s iter %02i rel_update = %.12e flops = %zu time = %.6f s\n", name, iter, double(rel_update), flops, seconds);
-		}
-		normalize_chi(target_mass);
+	static std::vector<size_t> select_sample(size_t requested, unsigned seed = 1) {
+		requested = std::min(requested, parts.size());
+		std::vector<size_t> indices(parts.size());
+		std::iota(indices.begin(), indices.end(), size_t(0));
+		std::mt19937 rng(seed);
+		std::shuffle(indices.begin(), indices.end(), rng);
+		indices.resize(requested);
+		std::sort(indices.begin(), indices.end());
+		return indices;
 	}
 
-	static void compare_final_chi(const std::vector<T> &chi_fmm, const std::vector<T> &chi_exact) {
-		if (chi_fmm.size() != chi_exact.size() || chi_fmm.size() != parts.size()) {
-			fprintf(stderr,
-				"comparison size mismatch: FMM=%zu exact=%zu parts=%zu\n",
-				chi_fmm.size(), chi_exact.size(), parts.size());
+	static error_norms compare_sample(const std::vector<size_t> &sample_indices, const std::vector<T> &direct_potentials) {
+		if (sample_indices.size() != direct_potentials.size()) {
+			fprintf(stderr, "sample/direct size mismatch: %zu versus %zu\n", sample_indices.size(), direct_potentials.size());
 			abort();
 		}
 
+		error_norms norms;
 		T error_l1 = 0;
 		T error_l2_squared = 0;
-		T error_linf = 0;
-		T exact_l1 = 0;
-		T exact_l2_squared = 0;
-		T exact_linf = 0;
-		size_t linf_index = 0;
-
-		printf("# pointwise FMM versus direct solution\n");
-		printf("# index x y z chi_exact chi_fmm error abs_error\n");
-		for (size_t i = 0; i < chi_fmm.size(); i++) {
-			const T error = chi_fmm[i] - chi_exact[i];
+		T direct_l1 = 0;
+		T direct_l2_squared = 0;
+		T direct_linf = 0;
+		for (size_t sample = 0; sample < sample_indices.size(); sample++) {
+			const size_t i = sample_indices[sample];
+			const T exact = direct_potentials[sample];
+			const T error = forces[i].potential - exact;
 			const T abs_error = std::abs(error);
-			const T abs_exact = std::abs(chi_exact[i]);
-
+			const T abs_exact = std::abs(exact);
 			error_l1 += abs_error;
 			error_l2_squared += error * error;
-			exact_l1 += abs_exact;
-			exact_l2_squared += chi_exact[i] * chi_exact[i];
-			exact_linf = std::max(exact_linf, abs_exact);
-			if (abs_error > error_linf) {
-				error_linf = abs_error;
-				linf_index = i;
-			}
-
-			printf("%zu %.16e %.16e %.16e %.16e %.16e %+.16e %.16e\n",
-				i,
-				double(parts[i][0].to_double()),
-				double(parts[i][1].to_double()),
-				double(parts[i][2].to_double()),
-				double(chi_exact[i]),
-				double(chi_fmm[i]),
-				double(error),
-				double(abs_error));
+			norms.linf_abs = std::max(norms.linf_abs, abs_error);
+			direct_l1 += abs_exact;
+			direct_l2_squared += exact * exact;
+			direct_linf = std::max(direct_linf, abs_exact);
 		}
 
-		const T count = T(chi_fmm.size());
-		const T l1 = count > T(0) ? error_l1 / count : T(0);
-		const T l2 = count > T(0) ? std::sqrt(error_l2_squared / count) : T(0);
-		const T linf = error_linf;
-
-		const T relative_l1 = exact_l1 > T(0) ? error_l1 / exact_l1 : T(0);
-		const T relative_l2 = exact_l2_squared > T(0)
-			? std::sqrt(error_l2_squared / exact_l2_squared)
-			: T(0);
-		const T relative_linf = exact_linf > T(0) ? error_linf / exact_linf : T(0);
-
-		printf("# FMM error norms relative to direct solution\n");
-		printf("L1_abs   = %.12e\n", double(l1));
-		printf("L2_abs   = %.12e\n", double(l2));
-		printf("Linf_abs = %.12e\n", double(linf));
-		printf("L1_rel   = %.12e\n", double(relative_l1));
-		printf("L2_rel   = %.12e\n", double(relative_l2));
-		printf("Linf_rel = %.12e\n", double(relative_linf));
-		printf("Linf_index = %zu\n", linf_index);
-		if (!chi_fmm.empty()) {
-			printf("Linf_exact = %.12e\n", double(chi_exact[linf_index]));
-			printf("Linf_fmm   = %.12e\n", double(chi_fmm[linf_index]));
-		}
+		const T count = T(sample_indices.size());
+		norms.l1_abs = count > T(0) ? error_l1 / count : T(0);
+		norms.l2_abs = count > T(0) ? std::sqrt(error_l2_squared / count) : T(0);
+		norms.l1_rel = direct_l1 > T(0) ? error_l1 / direct_l1 : T(0);
+		norms.l2_rel = direct_l2_squared > T(0) ? std::sqrt(error_l2_squared / direct_l2_squared) : T(0);
+		norms.linf_rel = direct_linf > T(0) ? norms.linf_abs / direct_linf : T(0);
+		return norms;
 	}
 
-	static void run_brill_comparison(int iterations = 40, T target_mass = T(0.01), T omega = T(0.25)) {
-		// Build the tree once to establish the final particle permutation before
-		// saving the common initial iterate used by both solvers.
-		form_trees();
-		const std::vector<T> chi_initial = chi;
-		chi = chi_initial;
-		iterate_brill(gravity_method::fmm, iterations, target_mass, omega);
-		const std::vector<T> chi_fmm = chi;
-		chi = chi_initial;
-		iterate_brill(gravity_method::bruteforce, iterations, target_mass, omega);
-		const std::vector<T> chi_exact = chi;
-		compare_final_chi(chi_fmm, chi_exact);
-		chi = chi_fmm;
+	static void print_result_header(FILE *stream) {
+		fprintf(stream, "# order theta sample_count fmm_seconds direct_seconds fmm_flops direct_flops "
+						"L1_abs L2_abs Linf_abs L1_rel L2_rel Linf_rel\n");
+	}
+
+	static void print_result(FILE *stream, T theta, size_t sample_count, double fmm_seconds, double direct_seconds, size_t fmm_flops,
+							 size_t direct_flops, const error_norms &n) {
+		fprintf(stream, "%d %.1f %zu %.9e %.9e %zu %zu %.12e %.12e %.12e %.12e %.12e %.12e\n", ORDER, double(theta), sample_count,
+				fmm_seconds, direct_seconds, fmm_flops, direct_flops, double(n.l1_abs), double(n.l2_abs), double(n.linf_abs),
+				double(n.l1_rel), double(n.l2_rel), double(n.linf_rel));
+	}
+	static void run_brill_comparison(size_t requested_samples = 1000, const char *output_filename = "brille_theta_sweep.dat",
+									 T target_mass = T(0.01)) {
+
+		// Establish one common source state.
+		normalize_chi(target_mass);
+		update_masses();
+
+		// form_tree() permutes the particle arrays. Build the tree before selecting
+		// sampled indices or computing direct potentials so all later comparisons
+		// use the final particle ordering.
+		for (auto &f : forces) {
+			f.init();
+		}
+		reset_counters();
+
+		fpe_debug::set_context(ORDER, -1, "forming common tree");
+		const auto tree_t0 = std::chrono::steady_clock::now();
+		const size_t tree_flops = form_trees();
+		const auto tree_t1 = std::chrono::steady_clock::now();
+		const double tree_seconds = std::chrono::duration<double>(tree_t1 - tree_t0).count();
+
+		const auto sample_indices = select_sample(requested_samples);
+
+		printf("Direct summation sample = %zu of %zu particles\n", sample_indices.size(), parts.size());
+
+		fpe_debug::set_context(ORDER, -1, "direct summation");
+		const auto direct_t0 = std::chrono::steady_clock::now();
+		auto [direct_potentials, direct_flops] = compute_direct_potentials(sample_indices);
+		const auto direct_t1 = std::chrono::steady_clock::now();
+
+		const double direct_seconds = std::chrono::duration<double>(direct_t1 - direct_t0).count();
+
+		FILE *file = fopen(output_filename, "a");
+		if (!file) {
+			perror(output_filename);
+			abort();
+		}
+		printf("Writing results to %s\n", output_filename);
+		fprintf(stdout, "# order = %d\n", ORDER);
+		fprintf(file, "# order = %d\n", ORDER);
+		print_result_header(stdout);
+		print_result_header(file);
+
+		for (int theta_tenths = 9; theta_tenths >= 1; theta_tenths--) {
+			theta_max = T(theta_tenths) / T(10);
+			fpe_debug::set_context(ORDER, theta_tenths, "initializing FMM forces");
+			for (auto &f : forces) {
+				f.init();
+			}
+			for (auto &f : forces) {
+				f.init();
+			}
+
+			reset_counters();
+
+			const auto fmm_t0 = std::chrono::steady_clock::now();
+
+			fpe_debug::set_context(ORDER, theta_tenths, "computing FMM gravity");
+
+			const size_t gravity_flops = compute_gravity();
+
+			const auto fmm_t1 = std::chrono::steady_clock::now();
+
+			const size_t fmm_flops = tree_flops + gravity_flops;
+			const double fmm_seconds = tree_seconds + std::chrono::duration<double>(fmm_t1 - fmm_t0).count();
+			fpe_debug::set_context(ORDER, theta_tenths, "computing error norms");
+			const auto norms = compare_sample(sample_indices, direct_potentials);
+			print_result(stdout, theta_max, sample_indices.size(), fmm_seconds, direct_seconds, fmm_flops, direct_flops, norms);
+			print_result(file, theta_max, sample_indices.size(), fmm_seconds, direct_seconds, fmm_flops, direct_flops, norms);
+			fflush(file);
+			fpe_debug::set_context(ORDER, theta_tenths, "theta completed");
+		}
+		fclose(file);
 	}
 
 	static size_t particle_count() {
@@ -946,7 +1054,7 @@ template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<T> tree<T, V, FT, FV, ORDER, FLAGS>::volume;
 
 template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
-const T tree<T, V, FT, FV, ORDER, FLAGS>::theta_max = 0.3;
+T tree<T, V, FT, FV, ORDER, FLAGS>::theta_max = T(0.3);
 
 template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<int> tree<T, V, FT, FV, ORDER, FLAGS>::threads_avail(2 * std::thread::hardware_concurrency() - 1);
@@ -989,22 +1097,28 @@ std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::node_count(0);
 
 template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 struct run_tests {
+	size_t sample_count;
+	const char *output_filename;
+
 	void operator()() const {
 		using tree_type = tree<T, V, FT, FV, ORDER, FLAGS>;
 		srand(1);
 		tree_type::initialize();
 		printf("Brill source particles = %zu, order = %i\n", tree_type::particle_count(), ORDER);
 		tree_type::sort_grid();
-		tree_type::run_brill_comparison();
+		tree_type::run_brill_comparison(sample_count, output_filename);
 		tree_type::show_counters();
 		tree_type::reset_counters();
-		run_tests<T, V, FT, FV, ORDER + 1, FLAGS> run;
+		run_tests<T, V, FT, FV, ORDER + 1, FLAGS> run{sample_count, output_filename};
 		run();
 	}
 };
 
 template <class T, class V, class FT, class FV, int FLAGS>
 struct run_tests<T, V, FT, FV, PMAX + 1, FLAGS> {
+	size_t sample_count;
+	const char *output_filename;
+
 	void operator()() const {
 	}
 };
@@ -1114,6 +1228,7 @@ void test2() {
 }
 
 int main(int argc, char **argv) {
+	fpe_debug::install();
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
@@ -1140,8 +1255,17 @@ int main(int argc, char **argv) {
 	//	 return 0;
 	// ewald();
 	// return 0;
-	run_tests<float, simd::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithBestOptimization> run5;
-	run_tests<double, simd::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, PMIN, sfmmWithDoubleRotationOptimization> run4;
+	const size_t sample_count = argc > 1 ? std::stoull(argv[1]) : size_t(1000);
+	const std::string output_prefix = argc > 2 ? argv[2] : "brille_theta_sweep";
+	const std::string float_output = output_prefix + "_float.dat";
+	const std::string double_output = output_prefix + "_double.dat";
+	std::remove(float_output.c_str());
+	std::remove(double_output.c_str());
+
+	run_tests<float, simd::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithBestOptimization> run5{sample_count,
+																											 float_output.c_str()};
+	run_tests<double, simd::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, PMIN, sfmmWithDoubleRotationOptimization> run4{
+		sample_count, double_output.c_str()};
 	run5();
 	run4();
 	return 0;
