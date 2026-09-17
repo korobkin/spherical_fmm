@@ -136,8 +136,11 @@ class ConformalFactorSolver:
 
         Returns
         -------
-        psi : ndarray, shape (N,)
-            Conformal factor at the interpolation points.
+        one_plus_chi : ndarray, shape (N,)
+            1 + chi, the mass-normalized auxiliary field -- NOT the conformal
+            factor. chi carries the large negative normalization constant C,
+            so this is negative near the origin. Pass chi = result - 1 to
+            psi_at_points() to obtain psi itself (step 12).
         info : ConvergenceInfo
             Iteration diagnostics.
         """
@@ -167,7 +170,7 @@ class ConformalFactorSolver:
                 raise ValueError("error_norm must be 'linf' or 'l2'")
 
             if verbose:
-                print(f"iter {n:4d}  err={err:.3e}")
+                print(f"iter {n:4d}  err={err:.16e}")
 
             tilde_chi = tilde_next
             last_err = err
