@@ -40,75 +40,85 @@ struct conformal_solver_t {
 	conformal_solver_t(int const n_, double L, double M_, double sigma, double eps, double soft) {
 		n = n_;
 		M = M_;
-		Ngrid = n * n * n;
-		r_xyz.resize(Ngrid);
-		V.resize(Ngrid);
-		vol.resize(Ngrid);
+		Ngrid = (size_t)n * (size_t)n * (size_t)n;
 
 		const double dx = (2.0 * L) / (double)(n - 1);
 		const double vol_cell = dx * dx * dx;
 		const double inv2sig2 = 1.0 / (2.0 * sigma * sigma);
-		int idx = 0;
-		for (int i = 0; i < n; ++i) {
+
+		/* Build the uniform grid, retaining only the points where V > eps.
+		   This is the C equivalent of the notebook's `mask = V > eps`. */
+		r_xyz.reserve(Ngrid);
+		V.reserve(Ngrid);
+		vol.reserve(Ngrid);
+		for (size_t i = 0; i < n; ++i) {
 			const double x = -L + dx * (double)i;
-			for (int j = 0; j < n; ++j) {
+			for (size_t j = 0; j < n; ++j) {
 				const double y = -L + dx * (double)j;
-				for (int k = 0; k < n; ++k) {
+				for (size_t k = 0; k < n; ++k) {
 					const double z = -L + dx * (double)k;
-					r_xyz[idx][0] = x;
-					r_xyz[idx][1] = y;
-					r_xyz[idx][2] = z;
 					const double r2 = x * x + y * y + z * z;
-					V[idx] = exp(-r2 * inv2sig2);
-					vol[idx] = vol_cell;
-					idx++;
+					const double Vi = exp(-r2 * inv2sig2);
+					if (!(Vi > eps)) continue;
+					r_xyz.push_back({x, y, z});
+					V.push_back(Vi);
+					vol.push_back(vol_cell);
 				}
 			}
 		}
-		Nkeep = 0;
-		for (int i = 0; i < Ngrid; ++i) {
-			if (V[i] > eps) Nkeep++;
-		}
+		N = r_xyz.size();
 
-		if (std::isnan(soft)) soft = 0.5 * dx;
-		softening = soft;
+		/* A negative `soft` requests the default of dx/2. Do not use a NaN
+		   sentinel here: -ffast-math permits folding std::isnan() to false. */
+		softening = (soft < 0.0) ? 0.5 * dx : soft;
 	}
-	auto getPosition(int i) const {
+	auto getPosition(size_t i) const {
 		return r_xyz[i];
+	}
+	const std::vector<std::array<real, NDIM>> &getPositions() const {
+		return r_xyz;
+	}
+	/* Number of retained points (V > eps); the length of every array below. */
+	size_t getN() const {
+		return N;
+	}
+	/* Number of points in the full uniform grid, before the V > eps filter. */
+	size_t getNgrid() const {
+		return Ngrid;
 	}
 	real getW() const {
 		return std::inner_product(vol.begin(), vol.end(), V.begin(), real(0));
 	}
 	auto normalize_chi(std::vector<real> const &tilde_chi) const {
-		std::vector<real> chi_out(Ngrid);
+		std::vector<real> chi_out(N);
 		real denom = real(0);
-		for (size_t i = 0; i < Ngrid; ++i) {
+		for (size_t i = 0; i < N; ++i) {
 			denom += vol[i] * V[i] * tilde_chi[i];
 		}
 		assert(denom > 0.0);
 		const double C = -(4.0 * M_PI * M + getW()) / denom;
-		for (size_t i = 0; i < Ngrid; ++i) {
+		for (size_t i = 0; i < N; ++i) {
 			chi_out[i] = C * tilde_chi[i];
 		}
 		return std::pair(C, chi_out);
 	}
 	std::vector<real> masses_from_chi(const std::vector<real> &chi) const {
-		std::vector<real> m_out(Ngrid);
+		std::vector<real> m_out(N);
 		const double inv4pi = inv(4.0 * M_PI);
-		for (size_t i = 0; i < Ngrid; ++i) {
+		for (size_t i = 0; i < N; ++i) {
 			m_out[i] = vol[i] * V[i] * (real(1) + chi[i]) * inv4pi;
 		}
 		return m_out;
 	}
 	std::vector<real> chi_from_masses(const std::vector<real> &m) const {
-		std::vector<real> tilde_chi_next_out(Ngrid);
+		std::vector<real> tilde_chi_next_out(N);
 		const real eps2 = softening * softening;
 
-		for (size_t i = 0; i < Ngrid; ++i) {
+		for (size_t i = 0; i < N; ++i) {
 			const auto &xyzi = r_xyz[i];
 
 			real sum = 0.0;
-			for (size_t j = 0; j < Ngrid; ++j) {
+			for (size_t j = 0; j < N; ++j) {
 				if (exclude_self && j == i) continue;
 
 				const auto &xyzj = r_xyz[j];
@@ -123,15 +133,18 @@ struct conformal_solver_t {
 		}
 		return tilde_chi_next_out;
 	}
+	/* Steps 4-11. Returns (1 + chi, info): the mass-normalized auxiliary field,
+	   NOT the conformal factor. Feed chi = result - 1 to psi_at_points() to get
+	   psi itself (step 12). */
 	auto solve(real tol, int max_iter, cs_error_norm_t norm, int verbose) const {
-		std::vector<real> psi_out(Ngrid);
+		std::vector<real> psi_out(N);
 		cs_convergence_info_t info_out;
 		assert(tol > 0.0);
 		assert(max_iter > 0);
 
-		std::vector<real> tilde(Ngrid);
+		std::vector<real> tilde(N);
 		const real invM2 = inv(sqr(M));
-		for (size_t i = 0; i < Ngrid; ++i) {
+		for (size_t i = 0; i < N; ++i) {
 			auto const &xyz = r_xyz[i];
 			auto const r2 = std::inner_product(xyz.begin(), xyz.end(), xyz.begin(), real(0));
 			tilde[i] = 1.0 / std::sqrt(1.0 + 4.0 * r2 * invM2);
@@ -160,11 +173,11 @@ struct conformal_solver_t {
 													  [](real x, real y) {
 														  return sqr(x - y);
 													  }) /
-								real(Ngrid));
+								real(N));
 			}
 
 			if (verbose) {
-				printf("iter %4d  err=%.3e\n", iter, err);
+				printf("iter %4d  err=%.16e\n", iter, err);
 			}
 
 			/* swap tilde buffers */
@@ -178,9 +191,9 @@ struct conformal_solver_t {
 			}
 		}
 
-		/* final normalization for output psi */
+		/* final normalization for output */
 		auto const [_, chi] = normalize_chi(tilde);
-		for (size_t i = 0; i < Ngrid; ++i) {
+		for (size_t i = 0; i < N; ++i) {
 			psi_out[i] = 1.0 + chi[i];
 		}
 
@@ -189,9 +202,6 @@ struct conformal_solver_t {
 		info_out.last_error = last_err;
 
 		return std::pair(psi_out, info_out);
-	}
-	int getNkeep() const {
-		return Nkeep;
 	}
 	/* Evaluate psi(r) = 1 - Σ_j m_j / |r - r_j| at arbitrary points (step 12).
 	   The 1/(4π) is absorbed into the masses (step 7). */
@@ -203,7 +213,7 @@ struct conformal_solver_t {
 		for (size_t i = 0; i < K; ++i) {
 			const auto &xyzi = r_eval[i];
 			real sum = 0.0;
-			for (size_t j = 0; j < Ngrid; ++j) {
+			for (size_t j = 0; j < N; ++j) {
 				const auto &xyzj = r_xyz[j];
 				real r2 = eps2;
 				for (int d = 0; d < NDIM; ++d) {
@@ -218,16 +228,15 @@ struct conformal_solver_t {
 	}
 
 private:
-	size_t n;
-	size_t Ngrid;
-	int Nkeep;
-	/* Arrays owned by the caller; solver does not free them. */
-	std::vector<std::array<real, NDIM>> r_xyz; /* length 3*n: [x0,y0,z0, x1,y1,z1, ...] */
-	std::vector<real> V;					   /* length n */
-	std::vector<real> vol;					   /* length n */
+	size_t n;					   /* points per axis */
+	size_t Ngrid;				   /* n^3: size of the full grid before filtering */
+	size_t N;					   /* number of retained points (V > eps) */
+	std::vector<std::array<real, NDIM>> r_xyz; /* length N */
+	std::vector<real> V;					   /* length N */
+	std::vector<real> vol;					   /* length N */
 	real M;
-	real softening;	   /* >= 0; used as sqrt(|r_i-r_j|^2 + softening^2) */
-	bool exclude_self; /* if nonzero and softening==0, skip j==i */
+	real softening;			  /* >= 0; used as sqrt(|r_i-r_j|^2 + softening^2) */
+	bool exclude_self = true; /* skip the j==i term in chi_from_masses() */
 };
 
 /* Initialize a solver view over caller-owned arrays. Returns 0 on success. */

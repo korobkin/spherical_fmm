@@ -24,7 +24,6 @@ static void usage(const char *prog) {
 			"  --max_iter <int>  max iterations (default 200)\n"
 			"  --soft <double>   softening length (default dx/2)\n"
 			"  --out <file>      write (x y z psi) to file (default output.dat)\n"
-			"  --no_self         do NOT exclude self-interactions (default excludes if soft==0)\n"
 			"  --l2              use L2 error norm (default Linf)\n"
 			"  --quiet           no per-iteration output\n",
 			prog);
@@ -57,8 +56,7 @@ int main(int argc, char **argv) {
 	double M = 1.0;
 	double tol = 1e-11;
 	int max_iter = 200;
-	double soft = NAN; /* default: dx/2 */
-	int exclude_self = 1;
+	double soft = -1.0; /* negative: use the default dx/2 */
 	cs_error_norm_t norm = CS_ERROR_NORM_LINF;
 	int verbose = 1;
 	const char *out_path = "output.dat";
@@ -85,8 +83,6 @@ int main(int argc, char **argv) {
 			if (parse_double(argv[++i], &soft)) return 2;
 		} else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
 			out_path = argv[++i];
-		} else if (strcmp(argv[i], "--no_self") == 0) {
-			exclude_self = 0;
 		} else if (strcmp(argv[i], "--l2") == 0) {
 			norm = CS_ERROR_NORM_L2;
 		} else if (strcmp(argv[i], "--quiet") == 0) {
@@ -111,36 +107,48 @@ int main(int argc, char **argv) {
 
 	int const Ngrid = n * n * n;
 
-	/* Filter points where V > eps */
-
+	/* The solver keeps only the points where V > eps. */
 	conformal_solver_t solver(n, L, M, sigma, eps, soft);
-	auto const [psi, info] = solver.solve(tol, max_iter, norm, verbose);
+	auto const [one_plus_chi, info] = solver.solve(tol, max_iter, norm, verbose);
+	size_t const Nkeep = solver.getN();
+
+	/* solve() returns 1 + chi, the mass-normalized auxiliary field -- not the
+	   conformal factor (chi carries the large negative normalization constant
+	   C, so 1 + chi is negative near the origin). Recover chi and evaluate the
+	   physical psi(r) = 1 - sum_j m_j / |r - r_j| on the grid (step 12), as the
+	   Python notebook does. */
+	std::vector<double> chi(Nkeep);
+	for (size_t i = 0; i < Nkeep; ++i) {
+		chi[i] = one_plus_chi[i] - 1.0;
+	}
+	auto const psi = solver.psi_at_points(solver.getPositions(), chi);
+
 	double pmin = psi[0], pmax = psi[0];
-	int const Nkeep = solver.getNkeep();
-	for (int i = 1; i < Ngrid; ++i) {
+	for (size_t i = 1; i < Nkeep; ++i) {
 		if (psi[i] < pmin) pmin = psi[i];
 		if (psi[i] > pmax) pmax = psi[i];
 	}
-	printf("Ngrid=%d  Nkeep=%d  dx=%.6g\n", Ngrid, Nkeep, dx);
+	printf("Ngrid=%d  Nkeep=%zu  dx=%.16e\n", Ngrid, Nkeep, dx);
 	printf("W=%.16e\n", solver.getW());
-	printf("converged=%d  iterations=%d  last_error=%.3e\n", info.converged, info.iterations, info.last_error);
+	printf("converged=%d  iterations=%d  last_error=%.16e\n", info.converged, info.iterations, info.last_error);
 	printf("psi_min=%.16e  psi_max=%.16e\n", pmin, pmax);
 
 	FILE *fp = fopen(out_path, "w");
+	if (!fp) {
+		fprintf(stderr, "failed to open %s for writing\n", out_path);
+		return 1;
+	}
 	fprintf(fp, "# 1:x 2:y 3:z 4:psi\n");
-	for (int i = 0; i < Nkeep; ++i) {
-		const double x = solver.getPosition(i)[0];
-		const double y = solver.getPosition(i)[1];
-		const double z = solver.getPosition(i)[2];
-		fprintf(fp, "%14.7e %14.7e %14.7e %14.7e\n", x, y, z, psi[i]);
+	for (size_t i = 0; i < Nkeep; ++i) {
+		const auto &xyz = solver.getPosition(i);
+		fprintf(fp, "%23.16e %23.16e %23.16e %23.16e\n", xyz[0], xyz[1], xyz[2], psi[i]);
 	}
 	fclose(fp);
-	printf("wrote %d rows to %s\n", Nkeep, out_path);
+	printf("wrote %zu rows to %s\n", Nkeep, out_path);
 
 	/* Also output a 1D cut of psi along the x axis, computed via psi_at_points
 	   (brute-force summation over the masses), matching the Python notebook's
-	   psi_line computation — this is the true conformal factor, not the
-	   C*tilde_chi quantity that solve() returns on the grid. */
+	   psi_line computation. */
 	{
 		char xcut_path[1024];
 		const char *dot = strrchr(out_path, '.');
@@ -159,9 +167,6 @@ int main(int argc, char **argv) {
 			r_eval[i] = {x, 0.0, 0.0};
 		}
 
-		std::vector<double> chi(Ngrid);
-		for (int i = 0; i < Ngrid; ++i) chi[i] = psi[i] - 1.0;
-
 		auto psi_line = solver.psi_at_points(r_eval, chi);
 
 		FILE *fx = fopen(xcut_path, "w");
@@ -170,7 +175,7 @@ int main(int argc, char **argv) {
 		} else {
 			fprintf(fx, "# 1:x 2:y 3:z 4:psi  (x-axis cut via psi_at_points, K=%d)\n", K);
 			for (int i = 0; i < K; ++i) {
-				fprintf(fx, "%14.7e %14.7e %14.7e %14.7e\n", r_eval[i][0], 0.0, 0.0, psi_line[i]);
+				fprintf(fx, "%23.16e %23.16e %23.16e %23.16e\n", r_eval[i][0], 0.0, 0.0, psi_line[i]);
 			}
 			fclose(fx);
 			printf("wrote %d rows (x-axis cut) to %s\n", K, xcut_path);
