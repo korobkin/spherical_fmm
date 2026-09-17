@@ -1,0 +1,3 @@
+[submodule "external/simd"]
+	path = external/simd
+	url = https://github.com/dmarce1/simd.git

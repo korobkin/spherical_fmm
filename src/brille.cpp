@@ -9,7 +9,6 @@
 #include <fenv.h>
 #include <future>
 #include <limits>
-#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -823,39 +822,72 @@ public:
 		normalize_chi(target_mass);
 	}
 
-	static void compare_final_chi(const std::vector<T> &chi_fmm, const std::vector<T> &chi_brute) {
-		if (chi_fmm.size() != chi_brute.size()) {
-			fprintf(stderr, "chi size mismatch: FMM=%zu brute=%zu\n", chi_fmm.size(), chi_brute.size());
+	static void compare_final_chi(const std::vector<T> &chi_fmm, const std::vector<T> &chi_exact) {
+		if (chi_fmm.size() != chi_exact.size() || chi_fmm.size() != parts.size()) {
+			fprintf(stderr,
+				"comparison size mismatch: FMM=%zu exact=%zu parts=%zu\n",
+				chi_fmm.size(), chi_exact.size(), parts.size());
 			abort();
 		}
-		T error2 = 0;
-		T norm2 = 0;
-		T max_abs = 0;
-		T max_rel = 0;
-		size_t max_index = 0;
+
+		T error_l1 = 0;
+		T error_l2_squared = 0;
+		T error_linf = 0;
+		T exact_l1 = 0;
+		T exact_l2_squared = 0;
+		T exact_linf = 0;
+		size_t linf_index = 0;
+
+		printf("# pointwise FMM versus direct solution\n");
+		printf("# index x y z chi_exact chi_fmm error abs_error\n");
 		for (size_t i = 0; i < chi_fmm.size(); i++) {
-			const T diff = chi_fmm[i] - chi_brute[i];
-			const T abs_diff = std::abs(diff);
-			error2 += diff * diff;
-			norm2 += chi_brute[i] * chi_brute[i];
-			if (abs_diff > max_abs) {
-				max_abs = abs_diff;
-				max_index = i;
+			const T error = chi_fmm[i] - chi_exact[i];
+			const T abs_error = std::abs(error);
+			const T abs_exact = std::abs(chi_exact[i]);
+
+			error_l1 += abs_error;
+			error_l2_squared += error * error;
+			exact_l1 += abs_exact;
+			exact_l2_squared += chi_exact[i] * chi_exact[i];
+			exact_linf = std::max(exact_linf, abs_exact);
+			if (abs_error > error_linf) {
+				error_linf = abs_error;
+				linf_index = i;
 			}
-			const T denom = std::abs(chi_brute[i]);
-			if (denom > std::numeric_limits<T>::epsilon()) {
-				max_rel = std::max(max_rel, abs_diff / denom);
-			}
+
+			printf("%zu %.16e %.16e %.16e %.16e %.16e %+.16e %.16e\n",
+				i,
+				double(parts[i][0].to_double()),
+				double(parts[i][1].to_double()),
+				double(parts[i][2].to_double()),
+				double(chi_exact[i]),
+				double(chi_fmm[i]),
+				double(error),
+				double(abs_error));
 		}
-		const T rel_l2 = norm2 > T(0) ? std::sqrt(error2 / norm2) : T(0);
-		printf("FMM vs brute final chi:\n");
-		printf("  relative L2      = %.12e\n", double(rel_l2));
-		printf("  maximum absolute = %.12e\n", double(max_abs));
-		printf("  maximum relative = %.12e\n", double(max_rel));
-		printf("  maximum index    = %zu\n", max_index);
+
+		const T count = T(chi_fmm.size());
+		const T l1 = count > T(0) ? error_l1 / count : T(0);
+		const T l2 = count > T(0) ? std::sqrt(error_l2_squared / count) : T(0);
+		const T linf = error_linf;
+
+		const T relative_l1 = exact_l1 > T(0) ? error_l1 / exact_l1 : T(0);
+		const T relative_l2 = exact_l2_squared > T(0)
+			? std::sqrt(error_l2_squared / exact_l2_squared)
+			: T(0);
+		const T relative_linf = exact_linf > T(0) ? error_linf / exact_linf : T(0);
+
+		printf("# FMM error norms relative to direct solution\n");
+		printf("L1_abs   = %.12e\n", double(l1));
+		printf("L2_abs   = %.12e\n", double(l2));
+		printf("Linf_abs = %.12e\n", double(linf));
+		printf("L1_rel   = %.12e\n", double(relative_l1));
+		printf("L2_rel   = %.12e\n", double(relative_l2));
+		printf("Linf_rel = %.12e\n", double(relative_linf));
+		printf("Linf_index = %zu\n", linf_index);
 		if (!chi_fmm.empty()) {
-			printf("  chi_fmm          = %.12e\n", double(chi_fmm[max_index]));
-			printf("  chi_brute        = %.12e\n", double(chi_brute[max_index]));
+			printf("Linf_exact = %.12e\n", double(chi_exact[linf_index]));
+			printf("Linf_fmm   = %.12e\n", double(chi_fmm[linf_index]));
 		}
 	}
 
@@ -869,8 +901,8 @@ public:
 		const std::vector<T> chi_fmm = chi;
 		chi = chi_initial;
 		iterate_brill(gravity_method::bruteforce, iterations, target_mass, omega);
-		const std::vector<T> chi_brute = chi;
-		compare_final_chi(chi_fmm, chi_brute);
+		const std::vector<T> chi_exact = chi;
+		compare_final_chi(chi_fmm, chi_exact);
 		chi = chi_fmm;
 	}
 
@@ -914,7 +946,7 @@ template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<T> tree<T, V, FT, FV, ORDER, FLAGS>::volume;
 
 template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
-const T tree<T, V, FT, FV, ORDER, FLAGS>::theta_max = 0.7;
+const T tree<T, V, FT, FV, ORDER, FLAGS>::theta_max = 0.3;
 
 template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<int> tree<T, V, FT, FV, ORDER, FLAGS>::threads_avail(2 * std::thread::hardware_concurrency() - 1);
